@@ -191,7 +191,13 @@ class Lead(BaseModel):
     date = models.DateTimeField(verbose_name="Day Date", null=True,default=now )
     project = models.ForeignKey(Project,verbose_name="Project" , on_delete=models.SET_NULL , null=True)
     class Meta:
-        unique_together = ['user','phone']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['project', 'phone'],
+                name='unique_project_phone',
+                condition=models.Q(project__isnull=False)
+            )
+        ]
 
 
 class UpdateHistory(models.Model):

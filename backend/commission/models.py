@@ -126,9 +126,13 @@ class BasicRecord(BaseModel):
 class Commission(BaseModel):
     user = models.ForeignKey(User, verbose_name="User", on_delete=models.SET_NULL , null=True)
     basic = models.ForeignKey(BasicRecord,verbose_name="Basic" , on_delete=models.SET_NULL , null=True)
+    target_count = models.IntegerField(verbose_name="Target Count" , default=0)
     target = models.FloatField(verbose_name="Target" , default=0 )
+    target_Team_count = models.IntegerField(verbose_name="Target Team Count" , default=0)
     target_Team = models.FloatField(verbose_name="Target Team" , default=0)
+    plus_count = models.IntegerField(verbose_name="Plus Count" , default=0)
     plus = models.FloatField(verbose_name="Plus +5" , default=0)
+    plus_10_count = models.IntegerField(verbose_name="Plus 10 Count" , default=0)
     plus_10 = models.FloatField(verbose_name="Plus +10" , default=0)
     american = models.FloatField(verbose_name="American Leads" , default=0)
     american_count = models.IntegerField(verbose_name="American Leads Count" , default=0)
@@ -310,7 +314,7 @@ pre_save.connect(calc_annual, sender=BasicRecord)
 post_delete.connect(delete_annual,sender=BasicRecord)
 post_save.connect(create_user_commission_details,sender=User)
 # post_save.connect(create_Outcome_record,sender=BasicRecord)
-post_save.connect(create_Outcome_record_salary,sender=Commission)
+# post_save.connect(create_Outcome_record_salary,sender=Commission)
 
 
 post_save.connect(notify_action_plan,sender=ActionPlan)

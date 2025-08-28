@@ -2,9 +2,9 @@ from django.core.management.base import BaseCommand
 from django.conf import settings
 from users.models import WhatsappAccount , WhatsappNumber , ArrivingLeaving
 from django.utils import timezone
+from users.models import User
 
 class Command(BaseCommand):
-    help = 'Export tasks'
 
     def add_arguments(self, parser): ...
 
