@@ -31,11 +31,11 @@ export const WhatsAppWebChat: FC<WhatsAppWebChatProps> = ({ currentChat }) => {
             socket.emit('markChatAsRead', { chatId: currentChat.id._serialized });
         }
 
-        // Load messages for the chat
-        socket.emit("getChatMessages", {
-            chatId: currentChat.id._serialized,
-            limit: 100,
-        });
+        // // Load messages for the chat
+        // socket.emit("getChatMessages", {
+        //     chatId: currentChat.id._serialized,
+        //     limit: 1000,
+        // });
     }, [currentChat, dispatch]);
 
     return (

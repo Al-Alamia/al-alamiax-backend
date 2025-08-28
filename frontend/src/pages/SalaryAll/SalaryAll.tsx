@@ -194,18 +194,28 @@ const SalaryAll: FC<SalaryAllProps> = ({department__name}) => {
                             projects ? 
                             
                             Array.from(projects).map((val)=>{
-                                return <div className='w-full text-center' key={Math.random()}>
+                                return (<>
+                                <div className='w-full text-center' key={Math.random()}>
                                     {val} : {data?.results.filter((u,ind,arr)=>u?.basic_project_name===val).reduce((total,obj)=>total+ ( obj?.has_commission ? obj?.has_commission : 0),0)} EGP
                                 </div>
+                                </>)
                                 }
                             ) 
                             :
 
                             <></>
                         }
-
                     </div>
-                    </>
+                    <div className='flex flex-row rounded-md h-10 min-w-[950px] md:min-w-[1000px] items-center justify-evenly  md:w-full'>
+                        {
+                            data?.results && projects ? (
+                                <div className='w-full text-center' key={Math.random()}>
+                                    Total Salaries : {(data?.results as any).reduce((total:number,obj:any)=>total+ ( obj?.has_commission ? obj?.has_commission : 0),0)} EGP
+                                </div>
+                            ) : <></>
+                        }
+                    </div>
+                </>
                 ):<></>
             }
 

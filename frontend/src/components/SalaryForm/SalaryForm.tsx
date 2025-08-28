@@ -1,7 +1,6 @@
 import { useContext, useEffect, useState, type FC } from "react";
 import Container from "../../layouts/Container/Container";
 import { BasicDetails, Subscription } from "../../types/auth";
-import { parseFormData } from "../../utils/converter";
 import LoadingComponent from "../LoadingComponent/LoadingComponent";
 import { TotalLeads } from "../TotalLeadsCard/TotalLeadsCard";
 import { sendRequest } from "../../calls/base";
@@ -13,6 +12,7 @@ import { TRANSLATIONS } from "../../utils/constants";
 import { useAuth } from "../../hooks/auth";
 import { checkPermission } from "../../utils/permissions/permissions";
 import { useForm } from "react-hook-form";
+import TargetField from "./TargetField/TargetField";
 
 interface SalaryFormProps extends React.HTMLProps<HTMLDivElement> {
     oldSalary?: SalaryType;
@@ -23,6 +23,10 @@ interface SalaryFormProps extends React.HTMLProps<HTMLDivElement> {
     american?: Subscription[] | null;
     department?: string;
     analytics?: TotalLeads;
+    coinChange?: {
+        egp_to_sar: number,
+        date: string,
+    }
 
 }
 const SalaryForm: FC<SalaryFormProps> = ({
@@ -35,13 +39,12 @@ const SalaryForm: FC<SalaryFormProps> = ({
     american,
     department,
     user_uuid,
+    coinChange,
 }) => {
     const {lang} = useContext(LanguageContext)
     const {auth} = useAuth()
     const [loading, setLoading] = useState(false);
-    const navigate = useNavigate();
-    const [plusCount , setPlusCount] = useState(oldSalary ? oldSalary.plus / (analytics?.plus_price || 1) : 0)
-    const [plus10Count , setPlus10Count] = useState(oldSalary ? oldSalary.plus_10 / (analytics?.plus_10_price || 1) : 0)
+    const navigate = useNavigate();    
     const { register, handleSubmit, watch, setValue, getValues } = useForm<SalaryType>({
         defaultValues: oldSalary
             ? oldSalary
@@ -50,9 +53,13 @@ const SalaryForm: FC<SalaryFormProps> = ({
                   user:user_uuid,
                   basic:basic.uuid,
                   target: 0,
+                  target_count: 0,
                   target_Team: 0,
+                  target_Team_count: 0,
                   plus: 0,
+                  plus_count: 0,
                   plus_10:0,
+                  plus_10_count: 0,
                   american: 0,
                   american_count: 0,
                   deduction: 0,
@@ -225,31 +232,28 @@ const SalaryForm: FC<SalaryFormProps> = ({
                 />
                 <input 
                     className="hidden"
-                    {...register("user")}
+                    {...register("user" )}
                 />
 
-                <label
-                    className="col-span-1 place-self-center"
-                    htmlFor="target"
-                >
-                    {TRANSLATIONS.Salary.form.target[lang]}
-                </label>
-                <input
-                    className="mt-1 w-5/6 col-span-2 place-self-center outline-none px-4 rounded-lg border border-btns-colors-primary  bg-light-colors-login-third-bg dark:bg-dark-colors-login-third-bg"
-                    {...register("target",{valueAsNumber:true})}
+                <TargetField 
+                    uuid={user_uuid}
+                    register={register}
+                    coinChange={coinChange}
+                    setValue={setValue}
+                    count_name="target_count"
+                    value_name="target"
+                    title={TRANSLATIONS.Salary.form.target[lang]}
                 />
-
-                <label
-                    className="col-span-1 place-self-center"
-                    htmlFor="target_Team"
-                >
-                    {TRANSLATIONS.Salary.form.targetteam[lang]}
-                </label>
-                <input
-                    className="w-5/6 col-span-2 place-self-center outline-none px-4 rounded-lg border border-btns-colors-primary  bg-light-colors-login-third-bg dark:bg-dark-colors-login-third-bg"
-                    {...register("target_Team",{valueAsNumber:true})}
+                <TargetField 
+                    uuid={user_uuid}
+                    register={register}
+                    coinChange={coinChange}
+                    params={{table_type:"team"}}
+                    setValue={setValue}
+                    count_name="target_Team_count"
+                    value_name="target_Team"
+                    title={TRANSLATIONS.Salary.form.targetteam[lang]}
                 />
-
                 {department === "marketing" ? (
                     <>
                         <label
@@ -262,17 +266,19 @@ const SalaryForm: FC<SalaryFormProps> = ({
                             <input
                                 className="col-span-2 place-self-center w-[20%] outline-none px-1 text-center rounded-lg border border-btns-colors-primary  bg-light-colors-login-third-bg dark:bg-dark-colors-login-third-bg"
                                 type="number"
-                                min={0}
-                                value={plusCount}
+                                {...register("plus_count", { valueAsNumber: true, min: { value: 0, message: "min value is 0" } })}                                
                                 onChange={(e) => {
-                                    setPlusCount(parseInt(e.target.value))
+                                    setValue("plus_count",parseInt(e.target.value));
                                     setValue("plus", (parseInt(e.target.value) * (analytics?.plus_price || 1)) || 0);
                                 }} 
                             />                        
                             <input
-                                disabled
                                 className="border-none text-center w-[47%] col-span-2 place-self-center outline-none px-4 rounded-lg border border-btns-colors-primary  bg-light-colors-login-third-bg dark:bg-dark-colors-login-third-bg"
-                                {...register("plus",{valueAsNumber:true , min:{value:0,message:"min value is 0"}})}  
+                                {...register("plus",{
+                                    valueAsNumber:true , 
+                                    min:{value:0,message:"min value is 0"},
+                                })}  
+                                disabled
                             />
                         </div>
                         <label
@@ -285,17 +291,19 @@ const SalaryForm: FC<SalaryFormProps> = ({
                             <input
                                 className="col-span-2 place-self-center w-[20%] outline-none px-1 text-center rounded-lg border border-btns-colors-primary  bg-light-colors-login-third-bg dark:bg-dark-colors-login-third-bg"
                                 type="number"
-                                min={0}
-                                value={plus10Count}
+                                {...register("plus_10_count", { valueAsNumber: true, min: { value: 0, message: "min value is 0" } })}                                
                                 onChange={(e) => {
-                                    setPlus10Count(parseInt(e.target.value))
+                                    setValue("plus_10_count",parseInt(e.target.value));
                                     setValue("plus_10", (parseInt(e.target.value) * (analytics?.plus_10_price || 1)) || 0);
                                 }} 
                             />                        
                             <input
-                                disabled
                                 className="border-none text-center w-[47%] col-span-2 place-self-center outline-none px-4 rounded-lg border border-btns-colors-primary  bg-light-colors-login-third-bg dark:bg-dark-colors-login-third-bg"
-                                {...register("plus_10",{valueAsNumber:true , min:{value:0,message:"min value is 0"}})}  
+                                {...register("plus_10",{
+                                    valueAsNumber:true , 
+                                    min:{value:0,message:"min value is 0"},
+                                })}  
+                                disabled
                             />
                         </div>
                         <label
@@ -310,7 +318,10 @@ const SalaryForm: FC<SalaryFormProps> = ({
                                 className="col-span-2 place-self-center w-[20%] outline-none px-1 text-center rounded-lg border border-btns-colors-primary  bg-light-colors-login-third-bg dark:bg-dark-colors-login-third-bg"
                             />
                             <input
-                                {...register("american",{valueAsNumber:true})}
+                                {...register("american",{
+                                    valueAsNumber:true,
+                                })}
+                                disabled
                                 className="border-none text-center w-[47%] col-span-2 place-self-center outline-none px-4 rounded-lg border border-btns-colors-primary  bg-light-colors-login-third-bg dark:bg-dark-colors-login-third-bg"
                             />
                         </div>
@@ -323,11 +334,12 @@ const SalaryForm: FC<SalaryFormProps> = ({
                         </label>
                         <div className="col-span-2 place-self-center flex flex-row justify-center items-center gap-3">
                             <input
-                                {...register("subscriptions_count",{valueAsNumber:true})}
+                                {...register("subscriptions_count",{valueAsNumber:true })}
                                 className="col-span-2 place-self-center w-[20%] outline-none px-1 text-center rounded-lg border border-btns-colors-primary  bg-light-colors-login-third-bg dark:bg-dark-colors-login-third-bg"
                             />
                             <input
-                                {...register("subscriptions",{valueAsNumber:true})}
+                                {...register("subscriptions",{valueAsNumber:true })}
+                                disabled
                                 className="border-none text-center w-[47%] col-span-2 place-self-center outline-none px-4 rounded-lg border border-btns-colors-primary  bg-light-colors-login-third-bg dark:bg-dark-colors-login-third-bg"
                             />
                         </div>
@@ -345,6 +357,7 @@ const SalaryForm: FC<SalaryFormProps> = ({
                             />
                             <input
                                 {...register("american_subscriptions",{valueAsNumber:true})}
+                                disabled
                                 className="border-none text-center w-[47%] col-span-2 place-self-center outline-none px-4 rounded-lg border border-btns-colors-primary  bg-light-colors-login-third-bg dark:bg-dark-colors-login-third-bg"
                             />
                         </div>
@@ -359,7 +372,7 @@ const SalaryForm: FC<SalaryFormProps> = ({
                             {TRANSLATIONS.Salary.form.americanSubscription[lang]}
                         </label>
                         <input
-                            {...register("american_subscriptions",{valueAsNumber:true})}
+                            {...register("american_subscriptions",{valueAsNumber:true })}
                             className="w-5/6 col-span-2 place-self-center outline-none px-4 rounded-lg border border-btns-colors-primary  bg-light-colors-login-third-bg dark:bg-dark-colors-login-third-bg"
                         />
                     </>
@@ -396,6 +409,7 @@ const SalaryForm: FC<SalaryFormProps> = ({
                 </label>
                 <input
                     {...register("salary",{valueAsNumber:true})}
+                    disabled
                     className="hidden"
                 />
                 <label className="bg-[transparent] w-full col-span-2 place-self-center text-3xl outline-none border-none text-center">{watch("salary")}</label>

@@ -43,13 +43,13 @@ const TreasuryForm: FC<TreasuryFormProps> = ({creator_uuid,url , color , header 
                 position: "center",
                 icon: "success",
                 title: "Successfully",
-                // text:`${data?.username} -- ${data?.title}` ,
                 showConfirmButton: false,
                 timer: 1000
               })
             setRefresh(prev=>!prev)
             if (formRef.current){
-                formRef.current.reset()
+                formRef.current.reset();
+                (formRef.current.elements[1] as HTMLTextAreaElement)?.focus()
             }
         }).catch(
             error => Swal.fire({

@@ -21,9 +21,13 @@ export interface SalaryType {
     basic?:BasicDetails|string;
     user?:User|string;
     target: number;
+    target_count: number;
     target_Team: number;
+    target_Team_count: number;
     plus: number;
+    plus_count: number;
     plus_10: number;
+    plus_10_count: number;
     american: number;
     american_count: number;
     subscriptions:number;
@@ -104,7 +108,18 @@ const Salary: FC<SalaryProps> = () => {
 
         {
             canSalary && analytics && basicDetails && userCommissionDetails? 
-            <SalaryForm oldSalary={oldSalary ? oldSalary : undefined} analytics={analytics} user_uuid={userCommissionDetails?.user.uuid} basic={basicDetails} department={userCommissionDetails?.user.department.name.toLowerCase()}  subscriptions={subscriptions} american={americanSubscriptions} className='col-span-4 place-self-center' date={date_parsed}/>
+            <SalaryForm 
+                oldSalary={oldSalary ? oldSalary : undefined} 
+                analytics={analytics} 
+                user_uuid={userCommissionDetails?.user.uuid} 
+                basic={basicDetails} 
+                department={userCommissionDetails?.user.department.name.toLowerCase()}  
+                subscriptions={subscriptions} 
+                american={americanSubscriptions} 
+                className='col-span-4 place-self-center' 
+                date={date_parsed}
+                coinChange={coinChanger}
+            />
             :null
         }
         <div className={`col-span-4 place-self-center`}>

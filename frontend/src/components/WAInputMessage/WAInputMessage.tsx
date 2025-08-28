@@ -20,6 +20,10 @@ export const WAInputMessage: FC<WAInputMessageProps> = ({ targetId }) => {
             to: targetId,
             message: textareaRef.current.value,
         });
+        socket.emit("getChatMessages", {
+            chatId: targetId,
+            limit: 1000,
+        });
         setMessage("");
         textareaRef.current.value = "";
     }, [targetId, textareaRef]);

@@ -1,8 +1,8 @@
 const t = (arKey:string,enKey:string)=> ({ar:arKey,en:enKey})
 
-export const BASE_URL = "http://localhost:8000/" //
-export const BASE_URL_NESTJS = "http://localhost:3000" //
-export const BASE_URL_SOCKET = "http://localhost:1050" //
+export const BASE_URL = "/" //http://localhost:8000
+export const BASE_URL_NESTJS = "/" //http://localhost:3000
+export const BASE_URL_SOCKET = "/ws" //
 
 export const CURRENT_VERSION = "0.2.1"
 
