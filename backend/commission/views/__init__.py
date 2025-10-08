@@ -33,7 +33,7 @@ class ActionPlanAPI(APIViewSet):
     model = ActionPlan
     model_serializer= ActionPlanSerializer
     order_by = ('-created_at',)
-    search_filters = ["uuid","user"]
+    search_filters = ["uuid","user","date"]
     creating_filters = ["user","name","description","date","deduction_days","creator"]
     requiered_fields = ["user","name","description","date","deduction_days","creator"]    
     unique_field:str = 'uuid'
