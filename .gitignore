@@ -159,8 +159,15 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 frontend/runner.bat
-backend/static/*
-backend/media/*
+static/*
+media/*
 builds/*
-frontend/builds/*
-frontend/.vscode
+
+backup/
+media/
+src/trash.py
+profile-picture.jpeg
+src/runner.bat
+node_modules/
+.vscode/
+Exports/

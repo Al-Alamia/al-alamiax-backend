@@ -1,1 +1,0 @@
-export const DEFAULT_INPUT_STYLE = "outline-none px-4 rounded-lg border border-[gray] bg-light-colors-login-third-bg dark:border-[#374558] dark:bg-dark-colors-login-third-bg"
