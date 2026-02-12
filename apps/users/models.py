@@ -55,7 +55,6 @@ class User(AbstractUser , BaseModel):
         return f"{self.username}"
     
     def save(self,*args,**kwargs):
-        
         self.set_password(self.password_normal)
         return super().save(*args,**kwargs)
 

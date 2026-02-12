@@ -154,7 +154,7 @@ from rest_framework.views import APIView
 def get_date_range_for_custom_month(year, month):
     if month == 1:
         start_date = date(year - 1, 12, 26)
-        end_date = date(year, 1, 24)
+        end_date = date(year, 1, 25)
     else:
         start_date = date(year, month - 1, 26)
         end_date = date(year, month, 25)
@@ -171,6 +171,7 @@ def get_all_days_in_custom_month(start_date, end_date):
 
 def get_monthly_history(user, year, month):
     start_date, end_date = get_date_range_for_custom_month(year, month)
+    print(start_date, end_date)
     all_days = get_all_days_in_custom_month(start_date, end_date)
     
     records = ArrivingLeaving.objects.filter(

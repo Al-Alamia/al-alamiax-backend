@@ -1,6 +1,4 @@
-from api_views.mixin import (
-    PageNumberPagination ,
-)
+from .pagination import DefaultPagination, CustomPagination, Pagination1K
 from api_views.models import APIViewSet 
 from apps.users.models import (
     User , 
@@ -22,30 +20,16 @@ from apps.users.serializers import (
     RequestSerializer ,
     FingerPrintIDSerializer ,
     )
+from .project_department_views import ProjectViewSet, DepartmentViewSet
 
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import FormParser , MultiPartParser 
 from permissions.users import IsAgent , IsManager , IsHR , IsOwner , IsSuperUser
 
 
-class DefaultPagination(PageNumberPagination):
-    page_size = 15
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
-class CustomPagination(PageNumberPagination):
-    page_size = 10
-    page_size_query_param = 'page_size'
-    max_page_size = 100
-
-class Pagination1K(PageNumberPagination):
-    page_size = 1000
-    page_size_query_param = 'page_size'
-    max_page_size = 1000
 
 
 class UsersAPI(APIViewSet):
-    # permission_classes = [IsAuthenticated]
     pagination_class = Pagination1K
     model = User
     model_serializer= UserSerializer
@@ -62,41 +46,7 @@ class UsersAPI(APIViewSet):
         "DELETE": [IsSuperUser | IsOwner | IsManager | IsHR],
     }
 
-class ProjectsAPI(APIViewSet):
-    # permission_classes = [IsAuthenticated]
-    pagination_class = DefaultPagination
-    model = Project
-    model_serializer= ProjectSerializer
-    order_by = ('name',)
-    search_filters = ["uuid",'name']
-    creating_filters = ["name","logo"]
-    requiered_fields = ['name']
-    updating_filters = ["name","logo"]
-    unique_field:str = 'uuid'
-    permissions_config = {
-        "POST": [IsSuperUser | IsOwner],
-        "PUT": [IsSuperUser | IsOwner],
-        "DELETE": [IsSuperUser | IsOwner],
-    }
 
-
-
-class DepartmentsAPI(APIViewSet):
-    # permission_classes = [IsAuthenticated]
-    pagination_class = DefaultPagination
-    model = Department
-    model_serializer= DepartmentSerializer
-    order_by = ('name',)
-    search_filters = ["uuid",'name']
-    creating_filters = ["name"]
-    requiered_fields = ['name']
-    updating_filters = ["name"]
-    unique_field:str = 'uuid'
-    permissions_config = {
-        "POST": [IsSuperUser | IsOwner],
-        "PUT": [IsSuperUser | IsOwner],
-        "DELETE": [IsSuperUser | IsOwner],
-    }
 
 
 class ArrivingLeavingAPI(APIViewSet):
