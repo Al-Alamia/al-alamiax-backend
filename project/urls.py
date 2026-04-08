@@ -36,6 +36,7 @@ urlpatterns = [
     path('api/users/', include('apps.users.api.urls')),
     path('api/commission/',include('apps.commission.api.urls')),
     path('api/treasury/',include('apps.treasury.urls')),
+    path('api/hr-management/',include('apps.purposes.urls')),
     # path('media/',include('users.api.media_urls'))
 ]
 
