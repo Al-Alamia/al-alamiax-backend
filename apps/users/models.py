@@ -199,6 +199,7 @@ def fp_signal(sender:User , instance:User,created:bool,**kwargs):
             zk = ZK(zkconfig.ip, port=zkconfig.port, timeout=zkconfig.timeout, password=zkconfig.password, force_udp=zkconfig.force_udp, ommit_ping=zkconfig.ommit_ping)
         else :
             zk = ZK("192.168.11.157", port=4370, timeout=5, password=0, force_udp=False, ommit_ping=False)
+        conn = None
         try : 
             conn = zk.connect()
             conn.disable_device()
@@ -229,6 +230,7 @@ def fp_delete(sender:BaseModel, instance:User, **kwargs):
         zk = ZK(zkconfig.ip, port=zkconfig.port, timeout=zkconfig.timeout, password=zkconfig.password, force_udp=zkconfig.force_udp, ommit_ping=zkconfig.ommit_ping)
     else :
         zk = ZK("192.168.11.157", port=4370, timeout=5, password=0, force_udp=False, ommit_ping=False)
+    conn = None
     try : 
         conn = zk.connect()
         conn.disable_device()

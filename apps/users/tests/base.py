@@ -1,8 +1,22 @@
 from rest_framework.test import APITestCase
-from apps.users.models import User, Project, Department
+from django.db.models.signals import post_save, post_delete
+from apps.users.models import User, Project, Department, fp_signal, fp_delete
 from apps.users.types import UserTypes
 
 class BaseUserTestCase(APITestCase):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # ZK fingerprint device is unreachable in tests
+        post_save.disconnect(fp_signal, sender=User)
+        post_delete.disconnect(fp_delete, sender=User)
+
+    @classmethod
+    def tearDownClass(cls):
+        post_save.connect(fp_signal, sender=User)
+        post_delete.connect(fp_delete, sender=User)
+        super().tearDownClass()
+
     def setUp(self):
         # Create default project and department
         self.project = Project.objects.create(name="Test Project")
