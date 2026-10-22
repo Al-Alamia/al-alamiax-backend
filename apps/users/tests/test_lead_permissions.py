@@ -126,3 +126,49 @@ class LeadPermissionsTests(LeadPipelineTestCase):
         self.assertTrue(c["assign"])
         self.assertFalse(c["create"] or c["view_hidden"])
         self.assertEqual((c["department"], c["level"]), ("sales", "leader"))
+
+    def test_scope_inactive_assignment_excluded(self):
+        a = self.make_lead(self.mk_agent)
+        s = self.assign(a, self.sales_agent)
+        s.is_active = False
+        s.save()
+        self.assertEqual(ids(self.scope(self.sales_agent)), set())
+
+    def test_scope_sales_leader_inactive_sales_assignment_is_unassigned(self):
+        a = self.make_lead(self.mk_agent)
+        s = self.assign(a, self.sales_agent2)
+        s.is_active = False
+        s.save()
+        self.assertEqual(ids(self.scope(self.sales_leader)), {a.uuid})
+
+    def test_scope_hidden_lead_excluded_for_non_admin(self):
+        self.make_lead(self.mk_agent, is_hidden=True)
+        self.assertEqual(ids(self.scope(self.mk_agent)), set())
+
+    def test_row_can_assigned_sales_agent_edit_status_note(self):
+        a = self.make_lead(self.mk_agent)
+        self.assign(a, self.sales_agent)
+        c = row_can(self.sales_agent, a)
+        self.assertTrue(c["edit"] and c["status"] and c["note"])
+        self.assertFalse(c["assign"])
+
+    def test_row_can_marketing_leader_team_scope(self):
+        c = row_can(self.mk_leader, self.make_lead(self.mk_agent))
+        self.assertTrue(c["edit"] and c["note"])
+        self.assertFalse(c["status"] or c["assign"])
+        self.assertFalse(any(row_can(self.mk_leader, self.make_lead(self.owner)).values()))
+
+    def test_row_can_sales_leader_other_team_cannot_assign(self):
+        a = self.make_lead(self.mk_agent)
+        self.assign(a, self.sales_agent2)
+        self.assertFalse(row_can(self.sales_leader, a)["assign"])
+
+    def test_row_can_sales_leader_as_assignee_can_return(self):
+        a = self.make_lead(self.mk_agent)
+        self.assign(a, self.sales_leader)
+        self.assertTrue(row_can(self.sales_leader, a)["return"])
+
+    def test_row_can_admin_as_assignee_can_return(self):
+        a = self.make_lead(self.mk_agent)
+        self.assign(a, self.manager)
+        self.assertTrue(row_can(self.manager, a)["return"])

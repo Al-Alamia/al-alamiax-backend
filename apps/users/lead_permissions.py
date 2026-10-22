@@ -3,7 +3,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from utils.working_days import return_days_left
 
-from .lead_roles import AGENT, LEADER, OWNER, LeadRole, resolve_role
+from .lead_roles import LEADER, OWNER, LeadRole, resolve_role
 from .models import LeadAssignment
 from .types import AssignmentKinds, DepartmentCodes
 
@@ -62,6 +62,16 @@ def scope_queryset(user, qs, *, hidden: bool = False):
     raise PermissionDenied(DENIED_MESSAGE)
 
 
+def _is_returnable_by(user, lead) -> bool:
+    sales = active_assignment(lead, AssignmentKinds.SALES.value)
+    return bool(
+        sales
+        and sales.agent_id == user.uuid
+        and lead.return_count == 0
+        and return_days_left(sales.created_at) > 0
+    )
+
+
 def row_can(user, lead, role: LeadRole = None) -> dict:
     role = role or resolve_role(user)
     can = dict.fromkeys(
@@ -70,34 +80,28 @@ def row_can(user, lead, role: LeadRole = None) -> dict:
 
     if role.is_admin:
         can.update(edit=True, status=True, note=True, assign=True, hide=True, delete=True)
-        return can
-
-    if role.department == _MARKETING:
+    elif role.department == _MARKETING:
         in_scope = (
             lead.user_id in _creator_ids(user, role)
             if role.level == LEADER
             else lead.user_id == user.uuid
         )
         can.update(edit=in_scope, note=in_scope)
-        return can
-
-    if role.department == _SALES:
+    elif role.department == _SALES:
         active = _active_assignments(lead)
         if role.level == LEADER:
             ids = _creator_ids(user, role)
             has_sales = any(a.kind == AssignmentKinds.SALES.value for a in active)
             in_scope = (not has_sales) or any(a.agent_id in ids for a in active)
-            can.update(edit=in_scope, status=in_scope, note=in_scope, assign=True)
-            return can
-        assigned = any(a.agent_id == user.uuid for a in active)
-        can.update(edit=assigned, status=assigned, note=assigned)
-        sales = active_assignment(lead, AssignmentKinds.SALES.value)
-        can["return"] = bool(
-            sales
-            and sales.agent_id == user.uuid
-            and lead.return_count == 0
-            and return_days_left(sales.created_at) > 0
-        )
+            can.update(edit=in_scope, status=in_scope, note=in_scope, assign=in_scope)
+        else:
+            assigned = any(a.agent_id == user.uuid for a in active)
+            can.update(edit=assigned, status=assigned, note=assigned)
+    else:
+        return can
+
+    # Whoever is the active sales assignee may return it (any level, incl. admins).
+    can["return"] = _is_returnable_by(user, lead)
     return can
 
 
