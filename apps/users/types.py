@@ -18,3 +18,10 @@ class RequestStatuses (models.TextChoices):
     PENDING = ("PENDING", "Pending")
     ACCEPTED = ("ACCEPTED", "Accepted")
     REJECTED = ('REJECTED','Rejected')
+
+
+class DepartmentCodes (models.TextChoices):
+    MARKETING = ("marketing", "Marketing")
+    SALES = ("sales", "Sales")
+    TECHNICAL = ("technical", "Technical")
+    OTHER = ("other", "Other")

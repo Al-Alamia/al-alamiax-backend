@@ -197,7 +197,8 @@ class ProjectAdminSite(ImportExportModelAdmin):
 
 
 class DepartmentAdminSite(ImportExportModelAdmin):
-    list_display = ["name"]
+    list_display = ["name", "code"]
+    list_editable = ["code"]
     # list_filter = ["user","date" ,'project']
     readonly_fields = ['uuid',"created_at","updated_at"]
     # search_fields = ['name', 'uuid']  
@@ -207,6 +208,7 @@ class DepartmentAdminSite(ImportExportModelAdmin):
         ],[
             [
                 'name',
+                'code',
             ],[
                 "uuid" ,
                 "created_at",

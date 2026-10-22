@@ -6,7 +6,7 @@ from .managers import (
         ManagerObjects ,
         OwnerObjects
     )
-from .types import UserTypes , RequestTypes , RequestStatuses
+from .types import UserTypes , RequestTypes , RequestStatuses , DepartmentCodes
 from utils.models_utils import image_upload_path , validate_lead_number , validate_role , validate_user_number
 from django.db.models.signals import pre_save , post_save , post_delete
 from core.models import BaseModel
@@ -29,6 +29,7 @@ class Project(BaseModel):
 
 class Department(BaseModel):
     name = models.CharField(verbose_name="Department Name", max_length=100)
+    code = models.CharField(verbose_name="Code", max_length=20, choices=DepartmentCodes.choices, default=DepartmentCodes.OTHER)
     def __str__(self):
         return self.name
 
