@@ -17,10 +17,11 @@ from apps.users.models import Lead, LeadAssignment, LeadScreenshot
 from apps.users.serializers.lead_pipeline import (
     LeadDetailSerializer,
     LeadListSerializer,
+    LeadUpdateSerializer,
     LeadWriteSerializer,
 )
 from apps.users.services.leads import LeadRuleError, log_update
-from apps.users.types import AssignmentKinds, LeadStatuses, LeadUpdateTypes
+from apps.users.types import AssignmentKinds, CallStatuses, LeadStatuses, LeadUpdateTypes
 
 from .pagination import DefaultPagination
 
@@ -211,3 +212,56 @@ class LeadViewSet(viewsets.ModelViewSet):
                 "interested": qs.filter(status=LeadStatuses.INTERESTED.value).count(),
             }
         )
+
+    # ---- per-lead actions -------------------------------------------------------
+
+    def _require(self, lead, capability):
+        if not row_can(self.request.user, lead, role=self.get_serializer_context()["role"])[
+            capability
+        ]:
+            raise PermissionDenied(CAPABILITY_MESSAGE)
+
+    @action(detail=True, methods=["get"])
+    def updates(self, request, uuid=None):
+        lead = self.get_object()
+        qs = lead.updates.select_related("by").order_by("-created_at")
+        page = self.paginate_queryset(qs)
+        return self.get_paginated_response(LeadUpdateSerializer(page, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def notes(self, request, uuid=None):
+        lead = self.get_object()
+        self._require(lead, "note")
+        note = str(request.data.get("note") or "").strip()
+        if not note:
+            raise ValidationError("Note is required")
+        update = log_update(lead, request.user, LeadUpdateTypes.NOTE.value, note=note)
+        return Response(LeadUpdateSerializer(update).data, status=http_status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="status", url_name="status")
+    def set_status(self, request, uuid=None):
+        lead = self.get_object()
+        self._require(lead, "status")
+        note = str(request.data.get("note") or "").strip()
+        fields = (
+            ("status", LeadStatuses, LeadUpdateTypes.STATUS),
+            ("call_status", CallStatuses, LeadUpdateTypes.CALL_STATUS),
+        )
+        changes = []
+        for field, choices, update_type in fields:
+            value = request.data.get(field)
+            if value in (None, ""):
+                continue
+            if value not in choices.values:
+                raise ValidationError(f"Invalid {field}")
+            old = getattr(lead, field)
+            if value != old:
+                changes.append((field, update_type, old, value))
+        with transaction.atomic():
+            for field, update_type, old, value in changes:
+                setattr(lead, field, value)
+                log_update(lead, request.user, update_type.value, old, value, note)
+            if changes:
+                lead.save(update_fields=[c[0] for c in changes])
+        lead = self.get_queryset().get(pk=lead.pk)
+        return Response(LeadDetailSerializer(lead, context=self.get_serializer_context()).data)
