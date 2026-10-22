@@ -21,7 +21,7 @@ from apps.users.serializers.lead_pipeline import (
     LeadUpdateSerializer,
     LeadWriteSerializer,
 )
-from apps.users.services.leads import LeadRuleError, assign_leads, log_update
+from apps.users.services.leads import LeadRuleError, assign_leads, log_update, return_lead
 from apps.users.types import AssignmentKinds, CallStatuses, DepartmentCodes, LeadStatuses, LeadUpdateTypes
 
 from .pagination import DefaultPagination
@@ -285,6 +285,15 @@ class LeadViewSet(viewsets.ModelViewSet):
             raise ValidationError("Note is required")
         update = log_update(lead, request.user, LeadUpdateTypes.NOTE.value, note=note)
         return Response(LeadUpdateSerializer(update).data, status=http_status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"], url_path="return", url_name="return")
+    def return_lead(self, request, uuid=None):
+        lead = self.get_object()
+        reason = str(self._payload().get("reason") or "")
+        return_lead(request.user, lead, reason)
+        lead.refresh_from_db()
+        serializer = LeadDetailSerializer(lead, context=self.get_serializer_context())
+        return Response(serializer.data)
 
     @action(detail=True, methods=["post"], url_path="status", url_name="status")
     def set_status(self, request, uuid=None):

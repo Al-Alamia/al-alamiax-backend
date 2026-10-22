@@ -39,6 +39,7 @@ urlpatterns = [
     path('leads/<uuid:uuid>/updates', LeadViewSet.as_view({'get': 'updates'})),
     path('leads/<uuid:uuid>/notes', LeadViewSet.as_view({'post': 'notes'})),
     path('leads/<uuid:uuid>/status', LeadViewSet.as_view({'post': 'set_status'})),
+    path('leads/<uuid:uuid>/return', LeadViewSet.as_view({'post': 'return_lead'})),
     path('lead',LeadAPI.as_view()) ,
     path('profile',ProfileAPI.as_view()) ,
     path('request',RequestAPI.as_view()) ,
