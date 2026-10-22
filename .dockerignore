@@ -1,4 +1,12 @@
-/backend/env
-/backend/backup
-/backend/trash.py
-/backend/db.sqlite3
+.venv
+.git
+__pycache__
+*.pyc
+db.sqlite3
+media
+staticfiles
+backup
+trash.py
+CLAUDE.md
+.env
+env
