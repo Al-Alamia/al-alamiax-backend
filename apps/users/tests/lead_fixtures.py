@@ -1,7 +1,10 @@
+from datetime import timedelta
 from itertools import count
 
+from django.utils import timezone
+
 from apps.commission.models import Team
-from apps.users.models import Department, Lead, User
+from apps.users.models import Department, Lead, LeadAssignment, User
 from apps.users.tests.base import BaseUserTestCase
 from apps.users.types import UserTypes
 
@@ -48,3 +51,14 @@ class LeadPipelineTestCase(BaseUserTestCase):
         }
         data.update(fields)
         return Lead.objects.create(**data)
+
+    def assign(self, lead, agent, kind="sales", days_ago=0, by=None):
+        assignment = LeadAssignment.objects.create(
+            lead=lead, agent=agent, kind=kind, assigned_by=by, is_active=True
+        )
+        if days_ago:
+            LeadAssignment.objects.filter(pk=assignment.pk).update(
+                created_at=timezone.now() - timedelta(days=days_ago)
+            )
+            assignment.refresh_from_db()
+        return assignment

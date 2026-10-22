@@ -9,6 +9,10 @@ from .models import (
     Project ,
     ArrivingLeaving ,
     Lead ,
+    LeadScreenshot ,
+    LeadAssignment ,
+    LeadReturn ,
+    LeadUpdate ,
     Profile ,
     UpdateHistory , 
     Request , 
@@ -338,6 +342,20 @@ admin.site.register(Project , ProjectAdminSite)
 admin.site.register(Profile,ProfileAdminSite)
 admin.site.register(ArrivingLeaving,ArrinigLeavingAdminSite)
 admin.site.register(Lead,LeadAdminSite)
+admin.site.register(LeadScreenshot)
+admin.site.register(LeadAssignment)
+admin.site.register(LeadReturn)
+
+
+@admin.register(LeadUpdate)
+class LeadUpdateAdmin(admin.ModelAdmin):
+    def get_readonly_fields(self, request, obj=None):
+        return [f.name for f in self.model._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+
 admin.site.register(Request,RequestAdminSite)
 admin.site.register(UpdateHistory , UpdateHistoryAdminSite)
 admin.site.register(FingerPrintID , FingerPrintIDAdminSite)

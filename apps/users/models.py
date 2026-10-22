@@ -1,4 +1,5 @@
 from django.db import models
+from django.db.models import Q
 from django.contrib.auth.models import AbstractUser 
 from .managers import (
         CustomUserManager ,
@@ -6,7 +7,7 @@ from .managers import (
         ManagerObjects ,
         OwnerObjects
     )
-from .types import UserTypes , RequestTypes , RequestStatuses , DepartmentCodes
+from .types import UserTypes , RequestTypes , RequestStatuses , DepartmentCodes , StockMarkets , LeadStatuses , CallStatuses , AssignmentKinds , LeadUpdateTypes
 from utils.models_utils import image_upload_path , validate_lead_number , validate_role , validate_user_number
 from django.db.models.signals import pre_save , post_save , post_delete
 from core.models import BaseModel
@@ -108,8 +109,53 @@ class Lead(BaseModel):
     name = models.CharField(verbose_name="Lead Name", max_length=100)
     date = models.DateTimeField(verbose_name="Day Date", null=True,default=now )
     project = models.ForeignKey(Project,verbose_name="Project" , on_delete=models.SET_NULL , null=True)
+    email = models.EmailField(verbose_name="Email", blank=True)
+    description = models.TextField(verbose_name="Description", blank=True)
+    stock_market = models.CharField(verbose_name="Stock Market", max_length=20, choices=StockMarkets.choices, blank=True)
+    status = models.CharField(verbose_name="Status", max_length=20, choices=LeadStatuses.choices, default=LeadStatuses.NEW)
+    call_status = models.CharField(verbose_name="Call Status", max_length=20, choices=CallStatuses.choices, default=CallStatuses.PENDING)
+    is_hidden = models.BooleanField(verbose_name="Is Hidden", default=False)
+    return_count = models.PositiveIntegerField(verbose_name="Return Count", default=0)
     class Meta:
         unique_together = ['user','phone']
+
+
+class LeadScreenshot(BaseModel):
+    lead = models.ForeignKey(Lead, verbose_name="Lead", on_delete=models.CASCADE, related_name="screenshots")
+    image = models.ImageField(verbose_name="Image", upload_to="lead-screenshots/")
+
+
+class LeadAssignment(BaseModel):
+    lead = models.ForeignKey(Lead, verbose_name="Lead", on_delete=models.CASCADE, related_name="assignments")
+    agent = models.ForeignKey(User, verbose_name="Agent", on_delete=models.CASCADE, related_name="lead_assignments")
+    kind = models.CharField(verbose_name="Kind", max_length=10, choices=AssignmentKinds.choices)
+    assigned_by = models.ForeignKey(User, verbose_name="Assigned By", on_delete=models.SET_NULL, null=True, related_name="lead_assignments_made")
+    is_active = models.BooleanField(verbose_name="Is Active", default=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["lead", "kind"], condition=Q(is_active=True), name="one_active_assignment_per_kind"),
+        ]
+
+
+class LeadReturn(BaseModel):
+    lead = models.ForeignKey(Lead, verbose_name="Lead", on_delete=models.CASCADE, related_name="returns")
+    assignment = models.ForeignKey(LeadAssignment, verbose_name="Assignment", on_delete=models.CASCADE, related_name="returns")
+    returned_by = models.ForeignKey(User, verbose_name="Returned By", on_delete=models.SET_NULL, null=True, related_name="lead_returns")
+    reason = models.TextField(verbose_name="Reason")
+
+
+class LeadUpdate(BaseModel):
+    lead = models.ForeignKey(Lead, verbose_name="Lead", on_delete=models.CASCADE, related_name="updates")
+    by = models.ForeignKey(User, verbose_name="By", on_delete=models.SET_NULL, null=True, related_name="lead_updates")
+    type = models.CharField(verbose_name="Type", max_length=20, choices=LeadUpdateTypes.choices)
+    from_value = models.CharField(verbose_name="From Value", max_length=255, blank=True)
+    to_value = models.CharField(verbose_name="To Value", max_length=255, blank=True)
+    note = models.TextField(verbose_name="Note", blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
 
 
 class UpdateHistory(models.Model):
