@@ -12,7 +12,13 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AlterField(
+        # Remove + add instead of AlterField: PostgreSQL cannot cast between
+        # uuid (FK) and double precision in place.
+        migrations.RemoveField(
+            model_name='commission',
+            name='basic',
+        ),
+        migrations.AddField(
             model_name='commission',
             name='basic',
             field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, to='commission.basicrecord', verbose_name='Basic'),

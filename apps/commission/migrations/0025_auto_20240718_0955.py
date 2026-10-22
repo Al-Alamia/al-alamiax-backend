@@ -54,7 +54,17 @@ class Migration(migrations.Migration):
             name='user',
             field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL, verbose_name='User'),
         ),
-        migrations.AlterField(
+        migrations.AlterUniqueTogether(
+            name='commission',
+            unique_together={('date', 'user')},
+        ),
+        # Remove + add instead of AlterField: PostgreSQL cannot cast between
+        # uuid (FK) and double precision in place.
+        migrations.RemoveField(
+            model_name='commission',
+            name='basic',
+        ),
+        migrations.AddField(
             model_name='commission',
             name='basic',
             field=models.FloatField(default=0, verbose_name='Basic'),
@@ -63,10 +73,6 @@ class Migration(migrations.Migration):
             model_name='commission',
             name='target_Team',
             field=models.FloatField(default=0, verbose_name='Target Team'),
-        ),
-        migrations.AlterUniqueTogether(
-            name='commission',
-            unique_together={('date', 'user')},
         ),
         migrations.RemoveField(
             model_name='commission',
