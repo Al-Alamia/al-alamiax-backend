@@ -1,5 +1,6 @@
 import base64
 import tempfile
+from unittest import mock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
@@ -105,6 +106,33 @@ class LeadApiTests(LeadPipelineTestCase):
         self.assertEqual(response.data["name"], "X")
         update = LeadUpdate.objects.get(lead=lead, type="edited")
         self.assertIn("name", update.note)
+
+    def test_patch_without_edit_403(self):
+        lead = self.make_lead(self.mk_agent)
+        self.client.force_authenticate(self.mk_agent)
+        denied = dict.fromkeys(("edit", "status", "note", "assign", "return", "hide", "delete"), False)
+        with mock.patch("apps.users.views.lead_pipeline.row_can", return_value=denied):
+            response = self.client.patch(f"{URL}/{lead.uuid}", {"name": "X"}, format="json")
+        self.assertEqual(response.status_code, 403)
+        self.assertIn("message", response.data)
+
+    def test_create_stock_market_null_and_blank(self):
+        self.client.force_authenticate(self.mk_agent)
+        for i, value in enumerate((None, "")):
+            response = self.client.post(
+                URL, {"name": "N", "phone": f"012000000{i}", "stock_market": value}, format="json"
+            )
+            self.assertEqual(response.status_code, 201)
+            self.assertIsNone(response.data["stock_market"])
+            self.assertEqual(Lead.objects.get(uuid=response.data["uuid"]).stock_market, "")
+
+    def test_malformed_filters_400(self):
+        for params in ({"date_from": "not-a-date"}, {"date_to": "2024-13-45"}, {"project": "xyz"},
+                       {"created_by": "xyz"}, {"assigned_to": "xyz"}):
+            response = self.get(self.owner, **params)
+            self.assertEqual(response.status_code, 400, params)
+            self.assertIn("message", response.data)
+        self.assertEqual(self.get(self.owner, "/stats", project="xyz").status_code, 400)
 
     def test_delete_admin_only(self):
         lead = self.make_lead(self.mk_agent)

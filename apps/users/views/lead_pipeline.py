@@ -1,5 +1,9 @@
+from uuid import UUID
+
+from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
 from django.http import Http404
+from django.utils.dateparse import parse_date
 from rest_framework import status as http_status
 from rest_framework import viewsets
 from rest_framework.decorators import action
@@ -66,8 +70,26 @@ class LeadViewSet(viewsets.ModelViewSet):
         context["role"] = self._role
         return context
 
-    def _filtered_queryset(self):
+    def _validated_params(self):
         params = self.request.query_params
+        for field in ("project", "created_by", "assigned_to"):
+            if params.get(field):
+                try:
+                    UUID(params[field])
+                except ValueError:
+                    raise ValidationError(f"Invalid {field}")
+        for field in ("date_from", "date_to"):
+            if params.get(field):
+                try:
+                    valid = parse_date(params[field]) is not None
+                except ValueError:
+                    valid = False
+                if not valid:
+                    raise ValidationError(f"Invalid {field}, expected YYYY-MM-DD")
+        return params
+
+    def _filtered_queryset(self):
+        params = self._validated_params()
         qs = scope_queryset(
             self.request.user,
             Lead.objects.select_related("user", "project").prefetch_related("assignments__agent"),
@@ -108,7 +130,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_queryset(self):
-        return self._filtered_queryset().order_by("-date")
+        return self._filtered_queryset().order_by("-date", "-created_at")
 
     # ---- CRUD -------------------------------------------------------------------
 
@@ -128,10 +150,11 @@ class LeadViewSet(viewsets.ModelViewSet):
         self._check_unique_phone(request.user, data["phone"])
         if data.get("project") is None:
             data["project"] = request.user.project
-        lead = Lead.objects.create(user=request.user, **data)
-        for image in request.FILES.getlist("screenshots"):
-            LeadScreenshot.objects.create(lead=lead, image=image)
-        log_update(lead, request.user, LeadUpdateTypes.CREATED.value)
+        with transaction.atomic():
+            lead = Lead.objects.create(user=request.user, **data)
+            for image in request.FILES.getlist("screenshots"):
+                LeadScreenshot.objects.create(lead=lead, image=image)
+            log_update(lead, request.user, LeadUpdateTypes.CREATED.value)
         return Response(
             LeadDetailSerializer(lead, context=self.get_serializer_context()).data,
             status=http_status.HTTP_201_CREATED,
