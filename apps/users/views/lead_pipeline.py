@@ -24,6 +24,8 @@ from apps.users.serializers.lead_pipeline import (
 from apps.users.services.leads import LeadRuleError, assign_leads, log_update, return_lead
 from apps.users.types import AssignmentKinds, CallStatuses, DepartmentCodes, LeadStatuses, LeadUpdateTypes
 
+from utils.phones import normalize_sa_phone
+
 from .pagination import DefaultPagination
 
 CAPABILITY_MESSAGE = "You do not have permission to perform this action"
@@ -323,3 +325,66 @@ class LeadViewSet(viewsets.ModelViewSet):
                 lead.save(update_fields=[c[0] for c in changes])
         lead = self.get_queryset().get(pk=lead.pk)
         return Response(LeadDetailSerializer(lead, context=self.get_serializer_context()).data)
+
+    # ---- admin actions ----------------------------------------------------------
+
+    def _get_for_hide(self, uuid):
+        user = self.request.user
+        lead = scope_queryset(user, Lead.objects.all()).filter(uuid=uuid).first()
+        if lead is None and capabilities(user)["view_hidden"]:
+            lead = scope_queryset(user, Lead.objects.all(), hidden=True).filter(uuid=uuid).first()
+        if lead is None:
+            raise Http404
+        return lead
+
+    def _set_hidden(self, uuid, hidden):
+        lead = self._get_for_hide(uuid)
+        self._require(lead, "hide")
+        if lead.is_hidden == hidden:
+            raise ValidationError("Lead is already hidden" if hidden else "Lead is not hidden")
+        with transaction.atomic():
+            lead.is_hidden = hidden
+            lead.save(update_fields=["is_hidden"])
+            update_type = LeadUpdateTypes.HIDDEN if hidden else LeadUpdateTypes.UNHIDDEN
+            log_update(lead, self.request.user, update_type.value)
+        lead = Lead.objects.select_related("user", "project").get(pk=lead.pk)
+        return Response(LeadDetailSerializer(lead, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"])
+    def hide(self, request, uuid=None):
+        return self._set_hidden(uuid, True)
+
+    @action(detail=True, methods=["post"])
+    def unhide(self, request, uuid=None):
+        return self._set_hidden(uuid, False)
+
+    @action(detail=False, methods=["post"], url_path="delete-by-phones", url_name="delete-by-phones")
+    def delete_by_phones(self, request):
+        caps = capabilities(request.user)
+        if not caps["delete_by_phones"]:
+            raise PermissionDenied(CAPABILITY_MESSAGE)
+        data = self._payload()
+        phones = data.get("phones")
+        if not isinstance(phones, list) or not all(isinstance(p, str) for p in phones):
+            raise ValidationError("phones must be a list of strings")
+        project = data.get("project")
+        if project in (None, ""):
+            project = None
+            if not caps["delete_by_phones_all_projects"]:
+                raise ValidationError("Project is required")
+        else:
+            try:
+                project = UUID(str(project))
+            except ValueError:
+                raise ValidationError("Invalid project")
+        normalised = {n for n in map(normalize_sa_phone, phones) if n}
+        if not normalised:
+            return Response({"deleted": 0})
+        variants = set()
+        for n in normalised:
+            variants.update({n, f"+{n}", f"0{n[3:]}"})
+        leads = Lead.objects.filter(phone__in=variants)
+        if project is not None:
+            leads = leads.filter(project__uuid=project)
+        _, per_model = leads.delete()
+        return Response({"deleted": per_model.get(Lead._meta.label, 0)})
