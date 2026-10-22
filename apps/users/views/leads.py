@@ -3,7 +3,8 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST
 from rest_framework.request import Request
-from apps.users.models import Lead , User 
+from apps.users.models import Lead , LeadUpdate , User 
+from apps.users.types import LeadUpdateTypes
 from apps.commission.models import Additional , Team
 from apps.users.serializers import  LeadSerializer
 from apps.users.views import IsAuthenticated , IsOwner , IsSuperUser
@@ -158,6 +159,15 @@ def save_upload(request:Request):
                if isinstance(row["Market"],User)
                ]
     leads = Lead.objects.bulk_create(objects,ignore_conflicts=True)
+    # ignore_conflicts may not return reliable pks, so re-query the stored leads.
+    stored = Lead.objects.filter(
+        user__in={lead.user for lead in objects},
+        phone__in=[lead.phone for lead in objects],
+    ).exclude(updates__type=LeadUpdateTypes.CREATED)
+    LeadUpdate.objects.bulk_create([
+        LeadUpdate(lead=lead, by=request.user, type=LeadUpdateTypes.CREATED)
+        for lead in stored
+    ])
     return Response(LeadSerializer(leads,many=True).data, status=HTTP_200_OK)
 
 

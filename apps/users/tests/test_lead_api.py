@@ -1,11 +1,15 @@
 import base64
+import io
 import tempfile
 from unittest import mock
+
+import pandas as pd
 
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 
 from apps.users.models import Lead, LeadUpdate
+from apps.users.types import LeadUpdateTypes
 from apps.users.tests.lead_fixtures import LeadPipelineTestCase
 
 URL = "/api/users/leads"
@@ -161,3 +165,24 @@ class LeadApiTests(LeadPipelineTestCase):
             self.get(self.owner, "/stats").data,
             {"total": 4, "active": 3, "returned": 1, "interested": 1},
         )
+
+    def test_save_upload_logs_created(self):
+        self.mk_agent.crm_username = "mk_crm"
+        self.mk_agent.save()
+        df = pd.DataFrame({
+            "Market": ["mk_crm", "mk_crm"],
+            "Phone": ["01111111111", "01222222222"],
+            "Date": ["2024-01-01 - 12:00", "2024-01-02 - 12:00"],
+            "Name": ["A", "B"],
+        })
+        buffer = io.BytesIO()
+        df.to_excel(buffer, index=False)
+        upload = SimpleUploadedFile("leads.xlsx", buffer.getvalue())
+        self.client.force_authenticate(self.owner)
+        response = self.client.post("/api/users/save-upload", {"file": upload}, format="multipart")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 2)
+        for item in response.data:
+            updates = LeadUpdate.objects.filter(lead__uuid=item["uuid"], type=LeadUpdateTypes.CREATED)
+            self.assertEqual(updates.count(), 1)
+            self.assertEqual(updates.get().by, self.owner)
