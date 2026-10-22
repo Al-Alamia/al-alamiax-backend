@@ -114,6 +114,11 @@ class LeadWriteSerializer(serializers.Serializer):
     )
     date = serializers.DateTimeField(required=False)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.partial:
+            self.fields.pop("date")  # create-only
+
     def validate_stock_market(self, value):
         return value or ""  # R5: stored as "" when unset
 

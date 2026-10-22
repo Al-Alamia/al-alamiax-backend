@@ -84,6 +84,13 @@ class DeleteByPhonesTests(LeadPipelineTestCase):
         )
         self.assertEqual(response.data, {"deleted": 1})
 
+    def test_delete_matches_nine_digit_stored_phone(self):
+        self.make_lead(self.mk_agent, phone="512345678")
+        response = self.delete(
+            self.manager, {"phones": ["0512345678"], "project": str(self.project.uuid)}
+        )
+        self.assertEqual(response.data, {"deleted": 1})
+
     def test_delete_by_phones_project_required_for_manager(self):
         self.make_lead(self.mk_agent, phone="966512345678")
         response = self.delete(self.manager, {"phones": ["0512345678"]})

@@ -1,4 +1,4 @@
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from apps.users.lead_roles import LEADER, resolve_role
 from apps.users.lead_permissions import active_assignment
@@ -17,8 +17,15 @@ def log_update(lead, by, type: str, from_value: str = "", to_value: str = "", no
     )
 
 
-@transaction.atomic
 def assign_leads(actor, leads: list, agent, kind: str) -> list:
+    try:
+        return _assign_leads(actor, leads, agent, kind)
+    except IntegrityError:
+        raise LeadRuleError("Lead was assigned concurrently, retry")
+
+
+@transaction.atomic
+def _assign_leads(actor, leads: list, agent, kind: str) -> list:
     if resolve_role(agent).department != DepartmentCodes.SALES.value:
         raise LeadRuleError("Agent is not in Sales")
     actor_role = resolve_role(actor)

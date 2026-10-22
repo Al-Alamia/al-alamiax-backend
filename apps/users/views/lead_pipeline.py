@@ -1,11 +1,12 @@
 from collections.abc import Mapping
 from uuid import UUID
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Exists, OuterRef, Q
 from django.http import Http404
 from django.utils.dateparse import parse_date
-from rest_framework import status as http_status
+from rest_framework import serializers, status as http_status
 from rest_framework import viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -155,14 +156,27 @@ class LeadViewSet(viewsets.ModelViewSet):
         if data.get("project") is None:
             data["project"] = request.user.project
         with transaction.atomic():
+            images = request.FILES.getlist("screenshots")
+            image_field = serializers.ImageField()
+            for image in images:
+                try:
+                    image_field.to_internal_value(image)
+                except DjangoValidationError as exc:
+                    raise ValidationError(exc.messages)
             lead = Lead.objects.create(user=request.user, **data)
-            for image in request.FILES.getlist("screenshots"):
+            for image in images:
                 LeadScreenshot.objects.create(lead=lead, image=image)
             log_update(lead, request.user, LeadUpdateTypes.CREATED.value)
         return Response(
             LeadDetailSerializer(lead, context=self.get_serializer_context()).data,
             status=http_status.HTTP_201_CREATED,
         )
+
+    def get_object(self):
+        # Hidden leads stay reachable for users with the view_hidden capability.
+        if self.action in ("retrieve", "updates"):
+            return self._get_for_hide(self.kwargs["uuid"])
+        return super().get_object()
 
     def retrieve(self, request, *args, **kwargs):
         lead = self.get_object()
@@ -235,7 +249,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         kind = data.get("kind")
         if kind not in AssignmentKinds.values:
             raise ValidationError("Invalid kind")
-        agent = User.objects.filter(pk=agent_id).first()
+        agent = User.objects.filter(pk=agent_id, is_active=True).first()
         if agent is None:
             raise ValidationError("Agent not found")
         leads = list(scope_queryset(request.user, Lead.objects.all()).filter(pk__in=lead_ids))
@@ -248,7 +262,7 @@ class LeadViewSet(viewsets.ModelViewSet):
     def assignable_agents(self, request):
         self._require_assign()
         role = resolve_role(request.user)
-        agents = User.objects.filter(department__code=DepartmentCodes.SALES.value)
+        agents = User.objects.filter(department__code=DepartmentCodes.SALES.value, is_active=True)
         if not role.is_admin:
             agents = agents.filter(Q(uuid__in=role.team_member_ids) | Q(pk=request.user.pk))
         return Response(
@@ -382,7 +396,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             return Response({"deleted": 0})
         variants = set()
         for n in normalised:
-            variants.update({n, f"+{n}", f"0{n[3:]}"})
+            variants.update({n, f"+{n}", f"0{n[3:]}", n[3:]})
         leads = Lead.objects.filter(phone__in=variants)
         if project is not None:
             leads = leads.filter(project__uuid=project)

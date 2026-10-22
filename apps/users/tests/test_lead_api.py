@@ -111,6 +111,35 @@ class LeadApiTests(LeadPipelineTestCase):
         update = LeadUpdate.objects.get(lead=lead, type="edited")
         self.assertIn("name", update.note)
 
+    def test_hidden_lead_retrievable_by_manager_only(self):
+        lead = self.make_lead(self.mk_agent, is_hidden=True)
+        response = self.get(self.manager, f"/{lead.uuid}")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["is_hidden"])
+        self.assertEqual(self.get(self.manager, f"/{lead.uuid}/updates").status_code, 200)
+        self.assertEqual(self.get(self.mk_agent, f"/{lead.uuid}").status_code, 404)
+
+    def test_create_non_image_screenshot_400(self):
+        with override_settings(MEDIA_ROOT=tempfile.mkdtemp()):
+            self.client.force_authenticate(self.mk_agent)
+            bad = SimpleUploadedFile("x.html", b"<html></html>", "text/html")
+            response = self.client.post(
+                URL, {"name": "N", "phone": "0100000077", "screenshots": [bad]}, format="multipart"
+            )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("message", response.data)
+        self.assertEqual(Lead.objects.count(), 0)
+
+    def test_patch_ignores_date(self):
+        lead = self.make_lead(self.mk_agent)
+        original = Lead.objects.get(pk=lead.pk).date
+        self.client.force_authenticate(self.mk_agent)
+        response = self.client.patch(
+            f"{URL}/{lead.uuid}", {"date": "2020-01-01T00:00:00Z"}, format="json"
+        )
+        self.assertIn(response.status_code, (200, 400))
+        self.assertEqual(Lead.objects.get(pk=lead.pk).date, original)
+
     def test_patch_without_edit_403(self):
         lead = self.make_lead(self.mk_agent)
         self.client.force_authenticate(self.mk_agent)

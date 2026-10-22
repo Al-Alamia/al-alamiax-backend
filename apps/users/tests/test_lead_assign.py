@@ -93,6 +93,34 @@ class LeadAssignTests(LeadPipelineTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual({a["username"] for a in response.data}, {"sales_agent", "sales_leader"})
 
+    def test_assign_inactive_agent_400(self):
+        lead = self.make_lead(self.mk_agent)
+        self.sales_agent2.is_active = False
+        self.sales_agent2.save()
+        response = self.post_assign(self.manager, [lead], self.sales_agent2)
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(LeadAssignment.objects.filter(lead=lead).exists())
+
+    def test_assignable_agents_excludes_inactive(self):
+        self.sales_agent2.is_active = False
+        self.sales_agent2.save()
+        self.client.force_authenticate(self.manager)
+        names = {a["username"] for a in self.client.get(f"{URL}/assignable-agents").data}
+        self.assertNotIn("sales_agent2", names)
+        self.assertIn("sales_agent", names)
+
+    def test_assign_concurrent_integrity_error_400(self):
+        from django.db import IntegrityError
+        from unittest import mock
+
+        lead = self.make_lead(self.mk_agent)
+        with mock.patch(
+            "apps.users.services.leads.LeadAssignment.objects.create", side_effect=IntegrityError
+        ):
+            response = self.post_assign(self.manager, [lead], self.sales_agent)
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data, {"message": "Lead was assigned concurrently, retry"})
+
     def test_assignable_agents_admin_all_sales(self):
         self.client.force_authenticate(self.manager)
         response = self.client.get(f"{URL}/assignable-agents")
