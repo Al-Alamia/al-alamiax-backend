@@ -13,6 +13,7 @@ from apps.users.views import (
      )
 from apps.users.views.arrive_leave import arreive , leave , arrive_leave_details , test , MonthlyHistoryView
 from apps.users.views.forget_pass import forget_password
+from apps.users.views.lead_pipeline import LeadViewSet
 from apps.users.views.leads import upload_sheet , save_upload , user_leads
 
 
@@ -29,6 +30,10 @@ urlpatterns = [
     path('department/<uuid:uuid>', DepartmentViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'})),
     path('arriving-leaving',ArrivingLeavingAPI.as_view()) ,
     path('arriving-leaving-list',MonthlyHistoryView.as_view()) ,
+    path('leads', LeadViewSet.as_view({'get': 'list', 'post': 'create'})),
+    path('leads/me', LeadViewSet.as_view({'get': 'me'})),
+    path('leads/stats', LeadViewSet.as_view({'get': 'stats'})),
+    path('leads/<uuid:uuid>', LeadViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update', 'delete': 'destroy'})),
     path('lead',LeadAPI.as_view()) ,
     path('profile',ProfileAPI.as_view()) ,
     path('request',RequestAPI.as_view()) ,
