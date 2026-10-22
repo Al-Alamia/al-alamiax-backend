@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from uuid import UUID
 
 from django.db import transaction
@@ -220,7 +221,7 @@ class LeadViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"])
     def assign(self, request):
         self._require_assign()
-        data = request.data
+        data = self._payload()
         lead_ids = data.get("leads")
         if not isinstance(lead_ids, list) or not lead_ids:
             raise ValidationError("leads must be a non-empty list")
@@ -235,7 +236,7 @@ class LeadViewSet(viewsets.ModelViewSet):
         agent = User.objects.filter(pk=agent_id).first()
         if agent is None:
             raise ValidationError("Agent not found")
-        leads = list(self._filtered_queryset().filter(pk__in=lead_ids))
+        leads = list(scope_queryset(request.user, Lead.objects.all()).filter(pk__in=lead_ids))
         if len(leads) != len(lead_ids):
             return Response({"message": "Lead not found"}, status=http_status.HTTP_404_NOT_FOUND)
         assignments = assign_leads(request.user, leads, agent, kind)
@@ -257,6 +258,11 @@ class LeadViewSet(viewsets.ModelViewSet):
 
     # ---- per-lead actions -------------------------------------------------------
 
+    def _payload(self):
+        if not isinstance(self.request.data, Mapping):
+            raise ValidationError("Request body must be a JSON object")
+        return self.request.data
+
     def _require(self, lead, capability):
         if not row_can(self.request.user, lead, role=self.get_serializer_context()["role"])[
             capability
@@ -274,7 +280,7 @@ class LeadViewSet(viewsets.ModelViewSet):
     def notes(self, request, uuid=None):
         lead = self.get_object()
         self._require(lead, "note")
-        note = str(request.data.get("note") or "").strip()
+        note = str(self._payload().get("note") or "").strip()
         if not note:
             raise ValidationError("Note is required")
         update = log_update(lead, request.user, LeadUpdateTypes.NOTE.value, note=note)
@@ -284,14 +290,15 @@ class LeadViewSet(viewsets.ModelViewSet):
     def set_status(self, request, uuid=None):
         lead = self.get_object()
         self._require(lead, "status")
-        note = str(request.data.get("note") or "").strip()
+        data = self._payload()
+        note = str(data.get("note") or "").strip()
         fields = (
             ("status", LeadStatuses, LeadUpdateTypes.STATUS),
             ("call_status", CallStatuses, LeadUpdateTypes.CALL_STATUS),
         )
         changes = []
         for field, choices, update_type in fields:
-            value = request.data.get(field)
+            value = data.get(field)
             if value in (None, ""):
                 continue
             if value not in choices.values:

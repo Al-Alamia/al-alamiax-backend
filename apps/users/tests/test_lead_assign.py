@@ -103,3 +103,41 @@ class LeadAssignTests(LeadPipelineTestCase):
     def test_assignable_agents_forbidden_for_agent(self):
         self.client.force_authenticate(self.sales_agent)
         self.assertEqual(self.client.get(f"{URL}/assignable-agents").status_code, 403)
+
+    def test_assign_non_object_body_400(self):
+        self.client.force_authenticate(self.manager)
+        for body in ([], "x", None):
+            response = self.client.post(f"{URL}/assign", body, format="json")
+            self.assertEqual(response.status_code, 400, body)
+            self.assertIn("message", response.data)
+
+    def test_status_non_object_body_400(self):
+        lead = self.make_lead(self.mk_agent)
+        self.assign(lead, self.sales_agent)
+        self.client.force_authenticate(self.sales_agent)
+        for action in ("status", "notes"):
+            response = self.client.post(f"{URL}/{lead.uuid}/{action}", [], format="json")
+            self.assertEqual(response.status_code, 400, action)
+            self.assertIn("message", response.data)
+
+    def test_assign_ignores_hidden_query_param(self):
+        hidden = self.make_lead(self.mk_agent, is_hidden=True)
+        response = self.post_assign_qs(self.manager, [hidden], self.sales_agent, "?hidden=true")
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(LeadAssignment.objects.filter(lead=hidden).exists())
+
+    def test_assign_ignores_filter_query_params(self):
+        lead = self.make_lead(self.mk_agent)
+        response = self.post_assign_qs(self.manager, [lead], self.sales_agent, "?status=interested")
+        self.assertEqual(response.status_code, 200)
+
+    def test_leader_assigns_to_team_member_and_self(self):
+        lead = self.make_lead(self.mk_agent)
+        self.assertEqual(self.post_assign(self.sales_leader, [lead], self.sales_agent).status_code, 200)
+        self.assertEqual(self.post_assign(self.sales_leader, [lead], self.sales_leader).status_code, 200)
+        self.assertEqual(self.active(lead).get().agent, self.sales_leader)
+
+    def post_assign_qs(self, user, leads, agent, qs):
+        self.client.force_authenticate(user)
+        payload = {"leads": [str(l.uuid) for l in leads], "agent": str(agent.uuid), "kind": "sales"}
+        return self.client.post(f"{URL}/assign{qs}", payload, format="json")
