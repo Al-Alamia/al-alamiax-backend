@@ -13,15 +13,15 @@ from rest_framework.response import Response
 
 from apps.users.lead_permissions import capabilities, row_can, scope_queryset
 from apps.users.lead_roles import resolve_role
-from apps.users.models import Lead, LeadAssignment, LeadScreenshot
+from apps.users.models import Lead, LeadAssignment, LeadScreenshot, User
 from apps.users.serializers.lead_pipeline import (
     LeadDetailSerializer,
     LeadListSerializer,
     LeadUpdateSerializer,
     LeadWriteSerializer,
 )
-from apps.users.services.leads import LeadRuleError, log_update
-from apps.users.types import AssignmentKinds, CallStatuses, LeadStatuses, LeadUpdateTypes
+from apps.users.services.leads import LeadRuleError, assign_leads, log_update
+from apps.users.types import AssignmentKinds, CallStatuses, DepartmentCodes, LeadStatuses, LeadUpdateTypes
 
 from .pagination import DefaultPagination
 
@@ -211,6 +211,48 @@ class LeadViewSet(viewsets.ModelViewSet):
                 "returned": qs.filter(return_count__gt=0).count(),
                 "interested": qs.filter(status=LeadStatuses.INTERESTED.value).count(),
             }
+        )
+
+    def _require_assign(self):
+        if not capabilities(self.request.user)["assign"]:
+            raise PermissionDenied(CAPABILITY_MESSAGE)
+
+    @action(detail=False, methods=["post"])
+    def assign(self, request):
+        self._require_assign()
+        data = request.data
+        lead_ids = data.get("leads")
+        if not isinstance(lead_ids, list) or not lead_ids:
+            raise ValidationError("leads must be a non-empty list")
+        try:
+            lead_ids = {UUID(str(value)) for value in lead_ids}
+            agent_id = UUID(str(data.get("agent")))
+        except ValueError:
+            raise ValidationError("Invalid lead or agent uuid")
+        kind = data.get("kind")
+        if kind not in AssignmentKinds.values:
+            raise ValidationError("Invalid kind")
+        agent = User.objects.filter(pk=agent_id).first()
+        if agent is None:
+            raise ValidationError("Agent not found")
+        leads = list(self._filtered_queryset().filter(pk__in=lead_ids))
+        if len(leads) != len(lead_ids):
+            return Response({"message": "Lead not found"}, status=http_status.HTTP_404_NOT_FOUND)
+        assignments = assign_leads(request.user, leads, agent, kind)
+        return Response({"assigned": len(assignments)})
+
+    @action(detail=False, methods=["get"], url_path="assignable-agents", url_name="assignable-agents")
+    def assignable_agents(self, request):
+        self._require_assign()
+        role = resolve_role(request.user)
+        agents = User.objects.filter(department__code=DepartmentCodes.SALES.value)
+        if not role.is_admin:
+            agents = agents.filter(Q(uuid__in=role.team_member_ids) | Q(pk=request.user.pk))
+        return Response(
+            [
+                {"uuid": a.uuid, "username": a.username, "name": a.get_full_name() or a.username}
+                for a in agents.order_by("username")
+            ]
         )
 
     # ---- per-lead actions -------------------------------------------------------

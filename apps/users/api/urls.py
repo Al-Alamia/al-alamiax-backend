@@ -33,6 +33,8 @@ urlpatterns = [
     path('leads', LeadViewSet.as_view({'get': 'list', 'post': 'create'})),
     path('leads/me', LeadViewSet.as_view({'get': 'me'})),
     path('leads/stats', LeadViewSet.as_view({'get': 'stats'})),
+    path('leads/assign', LeadViewSet.as_view({'post': 'assign'})),
+    path('leads/assignable-agents', LeadViewSet.as_view({'get': 'assignable_agents'})),
     path('leads/<uuid:uuid>', LeadViewSet.as_view({'get': 'retrieve', 'patch': 'partial_update', 'delete': 'destroy'})),
     path('leads/<uuid:uuid>/updates', LeadViewSet.as_view({'get': 'updates'})),
     path('leads/<uuid:uuid>/notes', LeadViewSet.as_view({'post': 'notes'})),
