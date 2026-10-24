@@ -1,6 +1,7 @@
 from django.urls import path , include
 from apps.users.views.report_views import add_report , check_report , get_reports
 from apps.users.views.authenticate import login , logout , token_refresh
+from apps.users.views.passwords import change_password , set_password
 from apps.users.views import (
     ProjectViewSet , 
     DepartmentViewSet , 
@@ -20,6 +21,8 @@ urlpatterns = [
     path('login',login ),
     path('logout',logout) ,
     path('token/refresh',token_refresh) ,
+    path('change_password',change_password) ,
+    path('<uuid:uuid>/set_password',set_password) ,
     path('arrive',arreive) ,
     path('leave',leave) , 
     path('arrive-leave-details',arrive_leave_details) , 
