@@ -3,7 +3,6 @@ from permissions.users import IsSuperUser ,IsOwner
 from apps.users.views import DefaultPagination , IsAuthenticated , Pagination1K
 from apps.commission.models import (
     UserCommissionDetails , 
-    DeductionRules,
     TargetSlice,
     BasicRecord,
     Commission ,
@@ -13,7 +12,6 @@ from apps.commission.models import (
     )
 from apps.commission.serializers import (
     UserCommissionDetailsSerializer , 
-    DeductionRulesSerializer , 
     TargetSliceSerializer , 
     BasicRecordSerializer ,
     CommissionSerializer ,
@@ -32,20 +30,8 @@ class UserCommissionDetailsAPI(APIViewSet):
     order_by = ('user',)
     search_filters = ["uuid","user"]
     unique_field:str = 'uuid'
-    updating_filters = ["basic","set_deduction_rules","deduction_rules","set_global_commission_rules","commission_rules","will_arrive_at","will_leave_at"]
+    updating_filters = ["basic","set_global_commission_rules","commission_rules"]
 
-
-class DeductionRulesAPI(APIViewSet):
-    permission_classes = [IsSuperUser ,IsOwner]
-    pagination_class = DefaultPagination
-    model = DeductionRules
-    model_serializer= DeductionRulesSerializer
-    order_by = ('late_time',)
-    search_filters = ["uuid","is_global"]
-    creating_filters = ["late_time","deduction_days","is_global","department"]
-    requiered_fields = ["late_time","deduction_days"]
-    updating_filters = ["late_time","deduction_days","is_global","department"]
-    unique_field:str = 'uuid'
 
 class TeamAPI(APIViewSet):
     permission_classes = [IsSuperUser ,IsOwner]

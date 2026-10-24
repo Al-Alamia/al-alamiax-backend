@@ -55,6 +55,7 @@ LOCAL_APPS = [
     'apps.commission.apps.CommissionConfig' ,
     'apps.treasury.apps.TreasuryConfig' ,
     'apps.purposes.apps.PurposesConfig' ,
+    'apps.attendance.apps.AttendanceConfig' ,
 ]
 
 INSTALLED_APPS = INSTALLED_APPS + THIRD_PARTY_APPS + LOCAL_APPS

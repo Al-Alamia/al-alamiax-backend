@@ -4,7 +4,6 @@ from apps.users.models import (
     User , 
     Project , 
     Department , 
-    ArrivingLeaving ,
     Profile,
     Lead,
     Request ,
@@ -14,7 +13,6 @@ from apps.users.serializers import (
     ProjectSerializer , 
     DepartmentSerializer , 
     UserSerializer , 
-    ArrivingLeavingSerializer ,
     ProfileSerializer ,
     LeadSerializer ,
     RequestSerializer ,
@@ -47,17 +45,6 @@ class UsersAPI(APIViewSet):
     }
 
 
-
-
-class ArrivingLeavingAPI(APIViewSet):
-    allowed_methods = ["GET"]
-    # permission_classes = [IsAuthenticated]
-    pagination_class = Pagination1K
-    model = ArrivingLeaving
-    model_serializer= ArrivingLeavingSerializer
-    order_by = ('date',)
-    search_filters = ["uuid","user","date"]
-    unique_field:str = 'uuid'
 
 
 class ProfileAPI(APIViewSet):

@@ -57,6 +57,9 @@ class User(AbstractUser , BaseModel):
     
     class Meta:
         verbose_name = "User"
+        constraints = [
+            models.UniqueConstraint(fields=["fp_id"], condition=~Q(fp_id=""), name="unique_non_blank_fp_id"),
+        ]
 
 
 class FingerPrintID(BaseModel):
@@ -66,26 +69,6 @@ class FingerPrintID(BaseModel):
     def __str__(self):
         return f"{self.name} - {self.user}"
         
-
-class ArrivingLeaving(BaseModel):
-    user = models.ForeignKey(User,verbose_name="User" , on_delete=models.CASCADE )
-    date = models.DateField(verbose_name="Day Date", ) # auto_now_add=True
-    arriving_at = models.DateTimeField(verbose_name="Arrining Date & Time", ) # auto_now_add=True
-    leaving_at = models.DateTimeField(verbose_name="Leaving Date & Time",null=True)
-    # deuration_between = models.PositiveIntegerField(verbose_name="Deuration in secounds" , null=True)
-
-    def save(self,*args,**kwargs):
-        if self.leaving_at:
-            self.deuration_between = (self.leaving_at - self.arriving_at).total_seconds()
-        return super().save(*args,**kwargs)
-
-    class Meta:
-        # set model as str 
-        unique_together = ['date','user']
-        verbose_name = "Arriving Leaving"
-        verbose_name_plural = "Arriving Leaving"
-
-
 
 class Profile(BaseModel):
     user = models.OneToOneField(User,verbose_name="User" , on_delete=models.CASCADE )
@@ -191,6 +174,8 @@ class ZKConfig(BaseModel):
     ommit_ping = models.BooleanField(verbose_name= "Ommit Ping")
     is_default= models.BooleanField(verbose_name= "Set Default")
     last_uid = models.PositiveBigIntegerField(verbose_name="Last Machine UID")
+    name = models.CharField(verbose_name="Name", max_length=100, blank=True)
+    last_synced_at = models.DateTimeField(verbose_name="Last Synced At", null=True, blank=True)
     
     
     
@@ -291,7 +276,6 @@ pre_save.connect(create_update_history, sender=Project)
 pre_save.connect(create_update_history, sender=Department)
 pre_save.connect(create_update_history, sender=FingerPrintID)
 pre_save.connect(create_update_history, sender=User)
-pre_save.connect(create_update_history, sender=ArrivingLeaving)
 pre_save.connect(create_update_history, sender=Profile)
 pre_save.connect(create_update_history, sender=Lead)
 pre_save.connect(create_update_history, sender=Request)

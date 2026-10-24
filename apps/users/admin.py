@@ -10,7 +10,6 @@ from .models import (
     User , 
     Department ,
     Project ,
-    ArrivingLeaving ,
     Lead ,
     LeadScreenshot ,
     LeadAssignment ,
@@ -53,21 +52,9 @@ class UserResource(resources.ModelResource):
         column_name='basic_salary',
         attribute='usercommissiondetails__basic'
     )
-    set_deduction_rules = fields.Field(
-        column_name='set_deduction_rules',
-        attribute='usercommissiondetails__set_deduction_rules'
-    )
     set_global_commission_rules = fields.Field(
         column_name='set_global_commission_rules',
         attribute='usercommissiondetails__set_global_commission_rules'
-    )
-    will_arrive_at = fields.Field(
-        column_name='will_arrive_at',
-        attribute='usercommissiondetails__will_arrive_at'
-    )
-    will_leave_at = fields.Field(
-        column_name='will_leave_at',
-        attribute='usercommissiondetails__will_leave_at'
     )
 
     class Meta:
@@ -75,11 +62,11 @@ class UserResource(resources.ModelResource):
         import_id_fields = ('username',)
         fields = (
             'username', 'password','profile__phone','annual_count', 'is_active', "first_name", "last_name", 'project_name', 'role', 'title', 'department_name', 'crm_username', 
-            'basic_salary', 'set_deduction_rules', 'set_global_commission_rules', 'will_arrive_at', 'will_leave_at'
+            'basic_salary', 'set_global_commission_rules'
         )
         export_order = (
             'username', 'password','profile__phone','annual_count', 'is_active', "first_name", "last_name", 'project_name', 'role', 'title', 'department_name', 'crm_username', 
-            'basic_salary', 'set_deduction_rules', 'set_global_commission_rules', 'will_arrive_at', 'will_leave_at'
+            'basic_salary', 'set_global_commission_rules'
         )
         
     def before_save_instance(self, instance, using_transactions, dry_run):
@@ -162,34 +149,6 @@ class ProfileAdminSite(ImportExportModelAdmin):
                 "updated_at"
             ]
     ]).fieldsets
-
-class ArrivingLeavingResource(resources.ModelResource):
-    class Meta:
-        model = ArrivingLeaving  
-
-
-class ArrinigLeavingAdminSite(ImportExportModelAdmin):
-    resource_classes = [ArrivingLeavingResource]
-    list_display = ["user","date","arriving_at","leaving_at",]
-    list_filter = ["user","date"]
-    readonly_fields = ['uuid',"created_at","updated_at","date" ,"arriving_at"]
-    search_fields = ['user__username' , 'uuid' , 'date']  
-    fieldsets = FieldSets([
-            'Attendance Fields' ,
-            'Other Fields'
-        ],[
-            [
-                'user',
-                'date',
-                'arriving_at',
-                'leaving_at',
-            ],[
-                "uuid" ,
-                "created_at",
-                "updated_at"
-            ]
-    ]).fieldsets
-
 
 class LeadAdminSite(ImportExportModelAdmin):
     list_display = ["user","phone",'project',"date"]
@@ -374,7 +333,6 @@ admin.site.register(User , UserAdminSite)
 admin.site.register(Department, DepartmentAdminSite)
 admin.site.register(Project , ProjectAdminSite)
 admin.site.register(Profile,ProfileAdminSite)
-admin.site.register(ArrivingLeaving,ArrinigLeavingAdminSite)
 admin.site.register(Lead,LeadAdminSite)
 admin.site.register(LeadScreenshot)
 admin.site.register(LeadAssignment)

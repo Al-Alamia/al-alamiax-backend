@@ -38,32 +38,14 @@ class TargetSlice(BaseModel):
 
 
 
-class DeductionRules(BaseModel):
-    late_time = models.PositiveIntegerField(verbose_name="Late in Secounds")
-    deduction_days = models.FloatField(verbose_name="Deduction in Days")
-    is_global = models.BooleanField(verbose_name="Set Global Rule")
-    department = models.ForeignKey(Department, verbose_name="Department", on_delete=models.CASCADE)
-    class Meta:
-        verbose_name = "Deduction Rules"
-        verbose_name_plural = "Deduction Rules"
-
-    def __str__(self) -> str:
-        return f"{self.late_time/60}min - {self.deduction_days} day - {self.department}"
-
-
-
 class UserCommissionDetails(BaseModel):
     user = models.OneToOneField(User,verbose_name="User" , on_delete=models.CASCADE)
     basic = models.PositiveIntegerField(verbose_name="Basic Salary"  , default= 0)
-    set_deduction_rules = models.BooleanField(verbose_name="Set Deduction Rules" , default=True)
-    deduction_rules = models.ManyToManyField(DeductionRules,verbose_name="Deduction Rules" , blank=True , limit_choices_to={"is_global":False})
     set_global_commission_rules = models.BooleanField(verbose_name="Set Global Rule" , default=True)
     commission_rules = models.ManyToManyField(TargetSlice,verbose_name="Commission Target Slices" , blank=True , limit_choices_to={"is_global":False})
-    will_arrive_at = models.TimeField(verbose_name="Must Arrive At",default=datetime.time(9,0,0))
-    will_leave_at = models.TimeField(verbose_name="Must Leave At",default=datetime.time(17,0,0))
 
     def __str__(self):
-        return f"{self.user} - {self.set_global_commission_rules} - {self.set_deduction_rules}"
+        return f"{self.user} - {self.set_global_commission_rules}"
 
     class Meta:
         verbose_name = 'User Commission Details'
@@ -128,7 +110,7 @@ class Commission(BaseModel):
     deduction = models.FloatField(verbose_name="Deduction" , default=0)
     gift = models.FloatField(verbose_name="Gift" , default=0)
     salary = models.FloatField(verbose_name="Total of Salary" , default=0)
-    date  = models.DateField(verbose_name="Date" , default=now().date() )
+    date  = models.DateField(verbose_name="Date" , default=datetime.date.today )
 
     def __str__(self):
         return self.date.strftime("%Y/%m")
@@ -153,7 +135,6 @@ def create_user_commission_details(sender, instance:User, created ,**kwargs):
         details = UserCommissionDetails.objects.create(
             user=instance ,
             basic=kwargs.get('basic',0),
-            set_deduction_rules=kwargs.get('set_deduction_rules',True),
             set_global_commission_rules=kwargs.get('set_global_commission_rules',True),
             )
         details.save()
@@ -217,7 +198,6 @@ def delete_annual(sender:BaseModel, instance:BasicRecord, **kwargs):
 pre_save.connect(create_update_history,sender=Team)
 pre_save.connect(create_update_history,sender=CoinChanger)
 pre_save.connect(create_update_history, sender=TargetSlice)
-pre_save.connect(create_update_history, sender=DeductionRules)
 pre_save.connect(create_update_history, sender=UserCommissionDetails)
 pre_save.connect(create_update_history, sender=Team)
 pre_save.connect(create_update_history, sender=CoinChanger)

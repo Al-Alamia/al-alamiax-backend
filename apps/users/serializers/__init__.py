@@ -2,14 +2,11 @@ from rest_framework.serializers import SerializerMethodField , DateField
 from api_views.serializers import ModelSerializer ,  ForeignField , ManyToManyField  
 import json
 from datetime import datetime
-from apps.commission.models import UserCommissionDetails , DeductionRules
-from core.calculator import Calculator
 from ..models import (
     Department,
     ReportRecord , 
     User , 
     Project , 
-    ArrivingLeaving , 
     Profile,
     Lead,
     Request ,
@@ -123,56 +120,6 @@ class UserSerializer(ModelSerializer):
         return super().update(instance, validated_data)
 
 
-class ArrivingLeavingSerializer(ModelSerializer):
-    late = SerializerMethodField()
-    departure = SerializerMethodField()
-    deuration = SerializerMethodField()
-    deduction = SerializerMethodField()
-
-    def get_late(self,obj:ArrivingLeaving):
-        if obj.arriving_at:
-            calculator = Calculator()
-            return calculator.calc_late(obj)
-        return 0
-    
-    def get_departure(self,obj:ArrivingLeaving):
-        if obj.leaving_at:
-            calculator = Calculator()
-            return calculator.calc_departure(obj)
-        return 0
-    
-    def get_deuration(self,obj:ArrivingLeaving):
-        if obj.leaving_at:
-            calculator = Calculator()
-            return calculator.calc_deuration(obj)
-        return 0
-    
-    def get_deduction(self,obj:ArrivingLeaving):
-        if obj.arriving_at:
-            calculator = Calculator()
-            late_time = calculator.calc_late(obj)
-            details:UserCommissionDetails = obj.user.usercommissiondetails
-            total= 0 
-            if details.set_deduction_rules :
-                total += calculator.calc_global_deduction(late_time)
-            else :
-                total += calculator.calc_custom_deduction(late_time,details)
-            return total 
-        return 1
-
-    class Meta:
-        model = ArrivingLeaving
-        fields = [
-            "uuid",
-            "user",
-            "date",
-            "arriving_at",
-            "leaving_at",
-            "deuration",
-            "late",
-            "departure",
-            "deduction",
-        ]
 
 
 class LeadSerializer(ModelSerializer):

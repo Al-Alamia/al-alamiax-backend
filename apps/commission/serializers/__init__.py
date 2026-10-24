@@ -5,7 +5,6 @@ from rest_framework.serializers import Serializer
 from apps.users.models import User
 from apps.commission.models import (
     CoinChanger,
-    DeductionRules,
     TargetSlice,
     Team,
     UserCommissionDetails,
@@ -28,18 +27,6 @@ class CoinChangerSerializer(ModelSerializer):
         ]
 
 
-
-class DeductionRulesSerializer(ModelSerializer):
-    department = DepartmentSerializer()
-    class Meta:
-        model = DeductionRules
-        fields = [
-            "uuid",
-            "late_time",
-            "deduction_days",
-            "is_global",
-            "department",
-        ]
 
 class TargetSliceSerializer(ModelSerializer):
     department = DepartmentSerializer()
@@ -80,7 +67,6 @@ class TeamSerializer(ModelSerializer):
 
 
 class UserCommissionDetailsSerializer(ModelSerializer):
-    deduction_rules = DeductionRulesSerializer(many=True, read_only=True)
     commission_rules = TargetSliceSerializer(many=True , read_only=True)
     user = UserSerializer(read_only=True)
     class Meta :
@@ -89,15 +75,10 @@ class UserCommissionDetailsSerializer(ModelSerializer):
             "uuid",
             "user",
             "basic",
-            "set_deduction_rules",
-            "deduction_rules",
             "set_global_commission_rules",
             "commission_rules",
-            "will_arrive_at",
-            "will_leave_at",
         ]
         many_to_many_models = {
-            "deduction_rules": ManyToManyField("deduction_rules",DeductionRules,'uuid') ,
             "commission_rules": ManyToManyField("commission_rules",TargetSlice,'uuid') ,
         }
         

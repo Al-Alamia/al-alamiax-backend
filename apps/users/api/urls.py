@@ -6,13 +6,11 @@ from apps.users.views import (
     ProjectViewSet , 
     DepartmentViewSet , 
     UsersAPI ,
-    ArrivingLeavingAPI ,
     LeadAPI ,
     ProfileAPI ,
     RequestAPI ,
     FingerPrintIDAPI,
      )
-from apps.users.views.arrive_leave import arreive , leave , arrive_leave_details , test , MonthlyHistoryView
 from apps.users.views.lead_pipeline import LeadViewSet
 from apps.users.views.leads import upload_sheet , save_upload , user_leads
 
@@ -23,16 +21,11 @@ urlpatterns = [
     path('token/refresh',token_refresh) ,
     path('change_password',change_password) ,
     path('<uuid:uuid>/set_password',set_password) ,
-    path('arrive',arreive) ,
-    path('leave',leave) , 
-    path('arrive-leave-details',arrive_leave_details) , 
     path('user',UsersAPI.as_view()) ,
     path('project', ProjectViewSet.as_view({'get': 'list', 'post': 'create'})),
     path('project/<uuid:uuid>', ProjectViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'})),
     path('department', DepartmentViewSet.as_view({'get': 'list', 'post': 'create'})),
     path('department/<uuid:uuid>', DepartmentViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'})),
-    path('arriving-leaving',ArrivingLeavingAPI.as_view()) ,
-    path('arriving-leaving-list',MonthlyHistoryView.as_view()) ,
     path('leads', LeadViewSet.as_view({'get': 'list', 'post': 'create'})),
     path('leads/me', LeadViewSet.as_view({'get': 'me'})),
     path('leads/stats', LeadViewSet.as_view({'get': 'stats'})),
@@ -57,6 +50,4 @@ urlpatterns = [
     path('add-report',add_report) ,
     path('check-report',check_report) ,
     path('get-reports',get_reports) ,
-
-    path('test',test) ,
 ]
