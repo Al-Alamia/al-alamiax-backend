@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from rest_framework.test import APITestCase
 from django.db.models.signals import post_save, post_delete
 from apps.users.models import User, Project, Department, fp_signal, fp_delete
@@ -42,6 +44,11 @@ class BaseUserTestCase(APITestCase):
             department=self.department
         )
         
+        # joined long ago, so attendance evaluation (which skips days before date_joined) covers test dates
+        User.objects.all().update(date_joined=datetime(2020, 1, 1))
+        self.superuser.refresh_from_db()
+        self.agent.refresh_from_db()
+
         from apps.users.models import FingerPrintID
         self.fingerprint = FingerPrintID.objects.create(
             user=self.agent,

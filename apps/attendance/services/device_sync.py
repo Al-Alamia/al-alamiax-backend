@@ -1,6 +1,8 @@
 from datetime import date, datetime, timedelta
 from typing import List, Optional
 
+from django.db import transaction
+
 from apps.attendance.models import AttendanceSettings, Punch
 from apps.attendance.types import PunchSource
 from apps.users.models import User, ZKConfig
@@ -50,16 +52,17 @@ def _sync_device(config: ZKConfig, now: datetime) -> int:
     existing = set(Punch.objects.filter(device=config, user_id__in={k[0] for k in wanted})
                    .values_list("user_id", "timestamp"))
     fresh = {k: u for k, u in wanted.items() if k not in existing}
-    before = Punch.objects.filter(device=config).count()
-    Punch.objects.bulk_create(
-        [Punch(user=u, timestamp=ts, source=PunchSource.DEVICE, device=config) for (_, ts), u in fresh.items()],
-        ignore_conflicts=True)
-    inserted = Punch.objects.filter(device=config).count() - before
-    affected = {(u, day_for_punch(u, ts)) for (_, ts), u in fresh.items()}
-    for user, d in affected:
-        evaluate_and_allow(user, d, now)
-    config.last_synced_at = now
-    config.save(update_fields=["last_synced_at", "updated_at"])
+    with transaction.atomic():  # a failure leaves nothing half-done; the next sync redoes it
+        before = Punch.objects.filter(device=config).count()
+        Punch.objects.bulk_create(
+            [Punch(user=u, timestamp=ts, source=PunchSource.DEVICE, device=config) for (_, ts), u in fresh.items()],
+            ignore_conflicts=True)
+        inserted = Punch.objects.filter(device=config).count() - before
+        affected = {(u, day_for_punch(u, ts)) for (_, ts), u in fresh.items()}
+        for user, d in affected:
+            evaluate_and_allow(user, d, now)
+        config.last_synced_at = now
+        config.save(update_fields=["last_synced_at", "updated_at"])
     return inserted
 
 

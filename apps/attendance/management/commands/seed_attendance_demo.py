@@ -46,7 +46,7 @@ class Command(BaseCommand):
 
         with transaction.atomic():
             morning, night = self._shifts()
-            new_users = self._demo_users()
+            new_users = self._demo_users(start)
             departments = self._departments()
             assignments = self._assignments(departments, morning, night, start, days)
             self._holidays(start, end)
@@ -87,7 +87,7 @@ class Command(BaseCommand):
                 demo.append(Department.objects.get_or_create(name=name)[0])
         return real + sorted(demo, key=lambda d: d.name)
 
-    def _demo_users(self) -> int:
+    def _demo_users(self, start: date) -> int:
         """Create demo users (in the demo departments, never real ones) only on a near-empty install."""
         if User.objects.count() >= 5:
             return 0
@@ -103,8 +103,9 @@ class Command(BaseCommand):
             for username, role, dept in spec:
                 if User.objects.filter(username=username).exists():
                     continue
+                # joined at the start of the range, or evaluation would skip every seeded day
                 User.objects.create_user(username=username, password=DEMO_PASSWORD, role=role,
-                                         department=dept)
+                                         department=dept, date_joined=datetime.combine(start, time.min))
                 created += 1
         finally:
             if was_connected:

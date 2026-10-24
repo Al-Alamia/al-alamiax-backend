@@ -31,7 +31,11 @@ def can_view(viewer, target) -> bool:
 
 def can_correct(viewer, target) -> bool:
     """Like ``can_view``, deliberately ignores ``is_active`` so history of deactivated users stays correctable."""
-    return is_hr_plus(viewer) or _is_manager_of(viewer, target)
+    if is_hr_plus(viewer):
+        return True
+    if viewer.pk == target.pk:  # nobody below HR approves their own corrections
+        return False
+    return _is_manager_of(viewer, target)
 
 
 class IsHRPlus(BasePermission):

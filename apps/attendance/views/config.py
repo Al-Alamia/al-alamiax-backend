@@ -271,8 +271,8 @@ def _policy_fields(body: dict) -> dict:
         out["monthly_late_allowance"] = v
     if "absence_days" in body:
         v = body["absence_days"]
-        if not _is_number(v) or not 0 <= v <= 1 or not math.isfinite(v):
-            raise _Invalid("absence_days must be a number between 0 and 1")
+        if not _is_number(v) or not 0 <= v <= 5 or not math.isfinite(v):
+            raise _Invalid("absence_days must be a number between 0 and 5")
         out["absence_days"] = float(v)
     return out
 

@@ -12,6 +12,7 @@ from utils.models_utils import image_upload_path , validate_lead_number , valida
 from django.db.models.signals import pre_save , post_save , post_delete
 from core.models import BaseModel
 import json
+import logging
 from django.utils.timezone import now
 from django.urls import reverse
 from uuid import uuid1
@@ -19,6 +20,9 @@ from zk import ZK, const
 from zk.attendance import Attendance
 from zk.user import User as ZkUser
 from zk.finger import Finger
+
+
+logger = logging.getLogger(__name__)
 
 
 class Project(BaseModel):
@@ -236,20 +240,24 @@ def fp_signal(sender:User , instance:User,created:bool,**kwargs):
                 users = conn.get_users()
                 next_id = max(map(lambda usr:usr.uid,users))
                 
-            if zkconfig :
-                zkconfig.last_uid = next_id 
-                zkconfig.save()
-
             next_uid = int(next_id + 1)
             conn.set_user(uid=next_uid,name=instance.username)
-            instance.fp_id = next_uid
+            if zkconfig :
+                zkconfig.last_uid = next_uid
+                zkconfig.save()
+            # update() avoids re-entering this post_save signal
+            User.objects.filter(pk=instance.pk).update(fp_id=str(next_uid))
+            instance.fp_id = str(next_uid)
             conn.enable_device()
         except Exception as e:
-            print(e)
+            # a device (or fp_id) problem must never break user creation
+            logger.exception("fp_signal failed for user %s: %s", instance.pk, e)
         finally:
             if conn:
-                conn.disconnect()
-            instance.save()
+                try:
+                    conn.disconnect()
+                except Exception as e:
+                    logger.warning("fp_signal disconnect failed: %s", e)
 
 def fp_delete(sender:BaseModel, instance:User, **kwargs):
     zkconfig = ZKConfig.objects.filter(is_default=True).first()

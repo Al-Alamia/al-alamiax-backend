@@ -30,7 +30,7 @@ def _deduction(policy, late_minutes: int, early_minutes: int, late_excused: bool
 def evaluate_day(user, d: date, now: Optional[datetime] = None) -> Optional[AttendanceDay]:
     """Idempotently (re)compute the AttendanceDay of ``user`` on ``d``.
 
-    Returns None (and removes any existing row) for a working day that is still open with no punches.
+    Returns None (and removes any existing row) for a date before ``user.date_joined`` and for a working day that is still open with no punches.
     The monthly late allowance is not applied here; see ``apply_allowance``.
     """
     now = now or datetime.now()
@@ -42,6 +42,10 @@ def evaluate_day(user, d: date, now: Optional[datetime] = None) -> Optional[Atte
     def save():
         day, _ = AttendanceDay.objects.update_or_create(user=user, date=d, defaults=fields)
         return day
+
+    if d < user.date_joined.date():  # nothing is owed for days before the user existed
+        AttendanceDay.objects.filter(user=user, date=d).delete()
+        return None
 
     shift = resolve_shift(user, d)
     if shift is None:

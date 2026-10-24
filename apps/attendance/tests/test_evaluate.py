@@ -128,10 +128,23 @@ class EvaluateDayTests(BaseUserTestCase):
     def test_no_shift(self):
         other = User.objects.create_user(username="o", password="x", email="o@test.com",
                                          project=self.project,
-                                         department=Department.objects.create(name="Other"))
+                                         department=Department.objects.create(name="Other"),
+                                         date_joined=dt.datetime(2020, 1, 1))
         day = self.ev(user=other)
         self.assertEqual(day.status, DayStatus.NO_SHIFT)
         self.assertEqual(day.deduction_days, 0)
+
+    def test_no_row_before_date_joined(self):
+        newbie = User.objects.create_user(username="newbie", password="x", email="n@test.com",
+                                          project=self.project, department=self.department,
+                                          date_joined=dt.datetime(2026, 10, 10, 8))
+        AttendanceDay.objects.create(user=newbie, date=D(2026, 10, 5), status=DayStatus.ABSENT,
+                                     evaluated_at=NOW)
+        recalculate(D(2026, 10, 5), D(2026, 10, 12), [newbie], now=NOW)
+        self.assertFalse(AttendanceDay.objects.filter(user=newbie, date=D(2026, 10, 5)).exists())
+        self.assertIsNone(self.ev(d=D(2026, 10, 5), user=newbie))
+        self.assertTrue(AttendanceDay.objects.filter(user=newbie, date=D(2026, 10, 12)).exists())
+        self.assertEqual(AttendanceDay.objects.filter(user=newbie).count(), 3)  # 10, 11, 12
 
     def test_night_shift_across_midnight(self):
         night = make_shift(name="Night", start_time=dt.time(22), end_time=dt.time(6), grace_minutes=0)

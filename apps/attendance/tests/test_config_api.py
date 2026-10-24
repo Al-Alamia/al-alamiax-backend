@@ -249,7 +249,7 @@ class PolicyTests(ConfigBase):
         p = make_policy(self.department)
         t = lambda m=10, d=0.5: [{"kind": "LATE", "min_minutes": m, "deduction_days": d}]
         for body in ({"monthly_late_allowance": 32}, {"monthly_late_allowance": 10 ** 12},
-                     {"absence_days": 1.5}):
+                     {"absence_days": 5.5}):
             r = self.client.put(f"{B}policies/{p.uuid}", body, format="json")
             self.assertEqual((r.status_code, r.data["type"]), (400, "validation"), body)
         huge = "9" * 400

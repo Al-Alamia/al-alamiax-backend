@@ -84,6 +84,21 @@ class SyncAllTests(SyncBase):
         self.use({"10.0.0.1": [rec("7", dt(2026, 10, 10, 9)), rec("7", dt(2026, 10, 19, 13))]})
         self.assertEqual(device_sync.sync_all(NOW)[0]["new_punches"], 1)
 
+    def test_evaluation_failure_rolls_back_the_device(self):
+        dev = make_device("10.0.0.1", name="Door")
+        self.use({"10.0.0.1": [rec("7", DAY.replace(hour=9, minute=5))]})
+        with mock.patch.object(device_sync, "evaluate_and_allow", side_effect=RuntimeError("boom")):
+            res = device_sync.sync_all(NOW)
+        self.assertFalse(res[0]["ok"])
+        self.assertEqual(res[0]["error"], "boom")
+        self.assertEqual(Punch.objects.filter(device=dev).count(), 0)
+        dev.refresh_from_db()
+        self.assertIsNone(dev.last_synced_at)
+        # the next sync starts from scratch and completes
+        again = device_sync.sync_all(NOW + timedelta(minutes=5))
+        self.assertEqual((again[0]["ok"], again[0]["new_punches"]), (True, 1))
+        self.assertTrue(AttendanceDay.objects.filter(user=self.agent, date=DAY.date()).exists())
+
     def test_error_isolated_per_device(self):
         a, b = make_device("10.0.0.1", "A"), make_device("10.0.0.2", "B")
         self.use({"10.0.0.1": OSError("unreachable"), "10.0.0.2": [rec("7", DAY.replace(hour=9))]})

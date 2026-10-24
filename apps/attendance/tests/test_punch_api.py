@@ -187,6 +187,20 @@ class PunchesApiTests(FrozenNowMixin, BaseUserTestCase):
         self.authenticate_as(self.agent)
         self.assertEqual(self.client.delete(f"{PUNCHES}/{man2.uuid}").status_code, 403)
 
+    def test_manager_cannot_correct_self(self):
+        self.authenticate_as(self.manager)
+        r = self.client.post(PUNCHES, {**self.body, "user": str(self.manager.uuid)}, format="json")
+        self.assertEqual((r.status_code, r.data["type"]), (403, "forbidden"))
+        own = punch(self.manager, self.past, PunchSource.MANUAL)
+        r = self.client.delete(f"{PUNCHES}/{own.uuid}")
+        self.assertEqual((r.status_code, r.data["type"]), (403, "forbidden"))
+        self.assertTrue(Punch.objects.filter(uuid=own.uuid).exists())
+
+    def test_hr_can_correct_self(self):
+        self.authenticate_as(self.hr)
+        r = self.client.post(PUNCHES, {**self.body, "user": str(self.hr.uuid)}, format="json")
+        self.assertEqual(r.status_code, 201, r.data)
+
     def test_delete_reevaluates_day(self):
         assign(make_shift(weekend_days=[]), department=self.department,
                effective_from=datetime.date(2020, 1, 1))
