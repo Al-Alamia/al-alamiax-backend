@@ -7,7 +7,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.db.models.signals import post_save
 
-from apps.attendance.models import (AttendanceDay, DeductionPolicy, DeductionTier, Holiday, Punch,
+from apps.attendance.models import (DeductionPolicy, DeductionTier, Holiday, Punch,
                                     Shift, ShiftAssignment)
 from apps.attendance.services.evaluate import recalculate
 from apps.attendance.services.shifts import resolve_shift, shift_window
@@ -46,16 +46,18 @@ class Command(BaseCommand):
 
         with transaction.atomic():
             morning, night = self._shifts()
+            new_users = self._demo_users()
             departments = self._departments()
-            new_users = self._demo_users(departments)
             assignments = self._assignments(departments, morning, night, start, days)
             self._holidays(start, end)
             self._policies(departments[-1])
             users = list(User.objects.filter(is_active=True, department__in=departments)
                          .order_by("username"))
             if options["reset"]:
+                # only demo punches go; recalculate below upserts/deletes the affected days
+                demo_users = User.objects.filter(punches__is_demo=True).distinct()
+                users = sorted({*users, *demo_users}, key=lambda u: u.username)
                 Punch.objects.filter(is_demo=True).delete()
-                AttendanceDay.objects.filter(user__in=users, date__range=(start, end)).delete()
             punches = self._punches(users, start, end, rng)
             evaluated = recalculate(start, end, users, now=datetime.now())
 
@@ -65,40 +67,44 @@ class Command(BaseCommand):
             f"punches created={punches}, days evaluated={evaluated}"))
 
     def _shifts(self):
-        morning, _ = Shift.objects.update_or_create(
+        """Existing shifts are reused unchanged; only missing ones are created."""
+        morning, _ = Shift.objects.get_or_create(
             name="Morning", defaults=dict(start_time=time(9, 0), end_time=time(17, 0),
                                           weekend_days=WEEKEND, grace_minutes=10, active=True))
-        night, _ = Shift.objects.update_or_create(
+        night, _ = Shift.objects.get_or_create(
             name="Night", defaults=dict(start_time=time(22, 0), end_time=time(6, 0),
                                         weekend_days=WEEKEND, grace_minutes=0, active=True))
         return morning, night
 
     def _departments(self):
-        # real departments first, so earlier-seeded demo departments never reshuffle the choice
-        departments = list(Department.objects.exclude(name__in=FALLBACK_DEPARTMENTS).order_by("name")[:2])
+        """Up to 2 real departments (by name), then the demo departments that exist or are needed."""
+        real = list(Department.objects.exclude(name__in=FALLBACK_DEPARTMENTS).order_by("name")[:2])
+        demo = list(Department.objects.filter(name__in=FALLBACK_DEPARTMENTS).order_by("name"))
         for name in FALLBACK_DEPARTMENTS:
-            if len(departments) >= 2:
+            if len(real) + len(demo) >= 2:
                 break
-            dept, _ = Department.objects.get_or_create(name=name)
-            if dept not in departments:
-                departments.append(dept)
-        return departments
+            if not any(d.name == name for d in demo):
+                demo.append(Department.objects.get_or_create(name=name)[0])
+        return real + sorted(demo, key=lambda d: d.name)
 
-    def _demo_users(self, departments) -> int:
+    def _demo_users(self) -> int:
+        """Create demo users (in the demo departments, never real ones) only on a near-empty install."""
         if User.objects.count() >= 5:
             return 0
-        spec = [("demo_agent1", UserTypes.AGENT, 0), ("demo_agent2", UserTypes.AGENT, 0),
-                ("demo_agent3", UserTypes.AGENT, 1), ("demo_agent4", UserTypes.AGENT, 1),
-                ("demo_manager", UserTypes.MANAGER, 0)]
+        sales, _ = Department.objects.get_or_create(name=FALLBACK_DEPARTMENTS[0])
+        marketing, _ = Department.objects.get_or_create(name=FALLBACK_DEPARTMENTS[1])
+        spec = [("demo_agent1", UserTypes.AGENT, sales), ("demo_agent2", UserTypes.AGENT, sales),
+                ("demo_agent3", UserTypes.AGENT, marketing), ("demo_agent4", UserTypes.AGENT, marketing),
+                ("demo_manager", UserTypes.MANAGER, sales)]
         created = 0
         # the post_save signal tries to reach a fingerprint device for every new user
         was_connected = post_save.disconnect(fp_signal, sender=User)
         try:
-            for username, role, dept_index in spec:
+            for username, role, dept in spec:
                 if User.objects.filter(username=username).exists():
                     continue
                 User.objects.create_user(username=username, password=DEMO_PASSWORD, role=role,
-                                         department=departments[dept_index])
+                                         department=dept)
                 created += 1
         finally:
             if was_connected:
@@ -106,13 +112,16 @@ class Command(BaseCommand):
         return created
 
     def _assignments(self, departments, morning, night, start: date, days: int) -> int:
-        plan = [(departments[0], morning, start), (departments[0], night, start + timedelta(days=days // 2))]
-        plan += [(d, morning, start) for d in departments[1:]]
+        """Only departments with no assignment at all get one; the first of them switches shift."""
+        bare = [d for d in departments if not ShiftAssignment.objects.filter(department=d).exists()]
         created = 0
-        for dept, shift, effective_from in plan:
-            _, was_created = ShiftAssignment.objects.update_or_create(
-                department=dept, effective_from=effective_from, defaults={"shift": shift})
-            created += was_created
+        for index, dept in enumerate(bare):
+            ShiftAssignment.objects.create(department=dept, shift=morning, effective_from=start)
+            created += 1
+            if index == 0:
+                ShiftAssignment.objects.create(department=dept, shift=night,
+                                               effective_from=start + timedelta(days=days // 2))
+                created += 1
         return created
 
     def _holidays(self, start: date, end: date):
@@ -131,16 +140,23 @@ class Command(BaseCommand):
             Holiday.objects.get_or_create(date=d, department=None, defaults={"name": name})
 
     def _policies(self, department):
-        global_policy = DeductionPolicy.objects.filter(department__isnull=True).first() or DeductionPolicy()
-        global_policy.monthly_late_allowance, global_policy.absence_days = 3, 1.0
-        global_policy.save()
-        dept_policy, _ = DeductionPolicy.objects.get_or_create(department=department)
-        dept_policy.monthly_late_allowance, dept_policy.absence_days = 1, 1.0
-        dept_policy.save()
-        for policy, tiers in ((global_policy, GLOBAL_TIERS), (dept_policy, DEPARTMENT_TIERS)):
-            for kind, minutes, deduction in tiers:
-                DeductionTier.objects.update_or_create(policy=policy, kind=kind, min_minutes=minutes,
-                                                       defaults={"deduction_days": deduction})
+        """Fill gaps only: a policy that already has tiers (or a department policy) is left alone."""
+        global_policy = (DeductionPolicy.objects.filter(department__isnull=True).first()
+                         or DeductionPolicy.objects.create())
+        if not global_policy.tiers.exists():
+            global_policy.monthly_late_allowance, global_policy.absence_days = 3, 1.0
+            global_policy.save()
+            self._add_tiers(global_policy, GLOBAL_TIERS)
+        if not DeductionPolicy.objects.filter(department=department).exists():
+            dept_policy = DeductionPolicy.objects.create(department=department, monthly_late_allowance=1,
+                                                         absence_days=1.0)
+            self._add_tiers(dept_policy, DEPARTMENT_TIERS)
+
+    @staticmethod
+    def _add_tiers(policy, tiers):
+        for kind, minutes, deduction in tiers:
+            DeductionTier.objects.create(policy=policy, kind=kind, min_minutes=minutes,
+                                         deduction_days=deduction)
 
     def _punches(self, users, start: date, end: date, rng: random.Random) -> int:
         holidays = set(Holiday.objects.filter(date__range=(start, end), department__isnull=True)
@@ -161,7 +177,7 @@ class Command(BaseCommand):
                 if shift is not None and d.weekday() not in (shift.weekend_days or []) \
                         and d not in holidays:
                     window = shift_window(shift, d)
-                    exists = Punch.objects.filter(user=user, is_demo=True,
+                    exists = Punch.objects.filter(user=user,
                                                   timestamp__gte=window.window_start,
                                                   timestamp__lt=window.window_end).exists()
                     if not exists:
