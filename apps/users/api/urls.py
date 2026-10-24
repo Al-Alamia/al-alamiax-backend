@@ -1,6 +1,6 @@
 from django.urls import path , include
 from apps.users.views.report_views import add_report , check_report , get_reports
-from apps.users.views.authenticate import login , logout
+from apps.users.views.authenticate import login , logout , token_refresh
 from apps.users.views import (
     ProjectViewSet , 
     DepartmentViewSet , 
@@ -19,6 +19,7 @@ from apps.users.views.leads import upload_sheet , save_upload , user_leads
 urlpatterns = [
     path('login',login ),
     path('logout',logout) ,
+    path('token/refresh',token_refresh) ,
     path('arrive',arreive) ,
     path('leave',leave) , 
     path('arrive-leave-details',arrive_leave_details) , 

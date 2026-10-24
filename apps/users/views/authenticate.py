@@ -1,5 +1,12 @@
 from rest_framework.response import Response
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
+from django.conf import settings
+from datetime import datetime
+from apps.users.models import User
 from rest_framework.status import  HTTP_401_UNAUTHORIZED , HTTP_200_OK
 from rest_framework.request import Request
 from apps.users.auth import Login
@@ -9,7 +16,7 @@ from apps.users.models import FingerPrintID
 from apps.users.serializers import FingerPrintIDSerializer
 
 
-@api_view(["POST","GET"])
+@api_view(["POST"])
 def login(request: Request):
     login_class = Login()
     try :
@@ -19,7 +26,7 @@ def login(request: Request):
         if is_superuser : 
             data.update({"unique_id":"SuperUser"})
         elif uuid :
-            finger = FingerPrintID.objects.filter(user__uuid=uuid , unique_id=request.query_params.get("unique_id",request.data.get("unique_id",None))).first()
+            finger = FingerPrintID.objects.filter(user__uuid=uuid , unique_id=request.data.get("unique_id",None)).first()
             if not finger :
                 raise NotImplementedError("No Devices ID added Please add one !")
             data.update({"unique_id":FingerPrintIDSerializer(finger).data})
@@ -38,8 +45,47 @@ def login(request: Request):
         response = Response(data,status)
     return response
 
-@api_view(["GET" , "POST"])
+def _unauthorized(message, exc_type):
+    return Response({"message": message, "type": exc_type}, HTTP_401_UNAUTHORIZED)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def token_refresh(request: Request):
+    value = request.data.get("refresh") if hasattr(request.data, "get") else None
+    if not value or not isinstance(value, str):
+        return _unauthorized("refresh token is required", "TokenError")
+    try:
+        old = RefreshToken(value)
+        claim = settings.SIMPLE_JWT.get("USER_ID_CLAIM", "user_id")
+        user = User.objects.filter(uuid=old.get(claim)).first()
+        if user is None or not user.is_active:
+            return _unauthorized("User not found or inactive", "AuthenticationFailed")
+        serializer = TokenRefreshSerializer(data={"refresh": value})
+        serializer.is_valid(raise_exception=True)
+        access = serializer.validated_data["access"]
+        new_refresh = serializer.validated_data.get("refresh", value)
+    except Exception as e:
+        return _unauthorized(str(e), e.__class__.__name__)
+    exp = AccessToken(access)["exp"]
+    return Response({
+        AUTH_COOKIE: access,
+        "refresh": new_refresh,
+        "expire": datetime.utcfromtimestamp(exp).isoformat(),
+    }, HTTP_200_OK)
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def logout(request: Request):
+    value = request.data.get("refresh") if hasattr(request.data, "get") else None
+    if value and isinstance(value, str):
+        try:
+            RefreshToken(value).blacklist()
+        except TokenError:
+            pass
     response = Response({"message":"Logout successfully"})
     response.delete_cookie(AUTH_COOKIE)
     return response

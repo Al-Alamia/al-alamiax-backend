@@ -46,6 +46,7 @@ THIRD_PARTY_APPS = [
     'rest_framework' ,
     'corsheaders',
     'import_export',
+    'rest_framework_simplejwt.token_blacklist',
 
 ]
 
@@ -214,8 +215,10 @@ REST_FRAMEWORK = {
 
 ### jwt Config
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': datetime.timedelta(days=1),
-    'REFRESH_TOKEN_LIFETIME': datetime.timedelta(days=1),
+    'ACCESS_TOKEN_LIFETIME': datetime.timedelta(hours=1),
+    'REFRESH_TOKEN_LIFETIME': datetime.timedelta(days=7),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_COOKIE': 'Authorization',
     'AUTH_HEADER': 'Authorization',
     'AUTH_BODY': 'Authorization',

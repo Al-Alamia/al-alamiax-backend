@@ -96,11 +96,13 @@ class LoginMixins(metaclass=ABCMeta):
             raise AttributeError(f'plase make sure you are passing ( {" , ".join(self.auth_fields)} ) in request body as json')
         
     def get_new_token(self,user:Optional[User])->dict:
-        token:RefreshToken = RefreshToken.for_user(user)
-        return self.get_data(user,token.access_token)
+        refresh:RefreshToken = RefreshToken.for_user(user)
+        return self.get_data(user,refresh.access_token,refresh)
 
-    def get_data(self,user:User ,token , *args , **kwargs):
+    def get_data(self,user:User ,token , refresh_token=None , *args , **kwargs):
         data:dict = self.user_serializer(user).data.copy()
+        if refresh_token is not None:
+            data.update({"refresh":str(refresh_token)})
         data.update({AUTH_COOKIE:f"{token}"})
         data.update({EXPIRE:datetime.utcfromtimestamp(token['exp']).isoformat()})
         return data
@@ -108,15 +110,15 @@ class LoginMixins(metaclass=ABCMeta):
     def login(self,request:HttpRequest):
         user , token = self.auth_class(request)
         if all(var != None for var in [user , token]):
-            return self.get_data(user,token)
+            return self.get_data(user,token,RefreshToken.for_user(user))
         else :
             return self.create_login_data(request)
 
     def check_body(self , request:Request):
         try :
             return json.loads(request.body)
-        except json.JSONDecodeError: ...
-        return request.query_params.dict()
+        except (json.JSONDecodeError, UnicodeDecodeError): ...
+        return {}
 
 
         
