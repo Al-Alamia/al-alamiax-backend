@@ -44,7 +44,6 @@ class User(AbstractUser , BaseModel):
 
     ### other normal fields
 
-    password_normal = models.CharField(verbose_name='Password Without Hash (Required)', max_length=128)
     project = models.ForeignKey(Project,verbose_name="Project" , on_delete=models.SET_NULL , null=True)
     role = models.CharField(max_length=100 , verbose_name="Role" , choices=UserTypes.choices , default=UserTypes.AGENT, validators=[validate_role])
     title = models.CharField(max_length=100 , verbose_name="Title" , default='Agent')
@@ -56,10 +55,6 @@ class User(AbstractUser , BaseModel):
     def __str__(self):
         return f"{self.username}"
     
-    def save(self,*args,**kwargs):
-        self.set_password(self.password_normal)
-        return super().save(*args,**kwargs)
-
     class Meta:
         verbose_name = "User"
 

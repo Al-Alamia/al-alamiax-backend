@@ -12,7 +12,6 @@ from apps.users.views import (
     FingerPrintIDAPI,
      )
 from apps.users.views.arrive_leave import arreive , leave , arrive_leave_details , test , MonthlyHistoryView
-from apps.users.views.forget_pass import forget_password
 from apps.users.views.lead_pipeline import LeadViewSet
 from apps.users.views.leads import upload_sheet , save_upload , user_leads
 
@@ -47,7 +46,6 @@ urlpatterns = [
     path('profile',ProfileAPI.as_view()) ,
     path('request',RequestAPI.as_view()) ,
     path('device-access',FingerPrintIDAPI.as_view()) ,
-    path('send_password',forget_password) ,
     path('upload-sheet',upload_sheet) ,
     path('save-upload',save_upload) ,
     path('user-leads',user_leads) ,

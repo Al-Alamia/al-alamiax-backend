@@ -35,7 +35,7 @@ class LeadPipelineTestCase(BaseUserTestCase):
     def _user(self, username, role, department):
         return User.objects.create_user(
             username=username,
-            password_normal="pass123",
+            password="pass123",
             email=f"{username}@test.com",
             role=role,
             department=department,

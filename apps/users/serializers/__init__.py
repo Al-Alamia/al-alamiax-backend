@@ -96,12 +96,13 @@ class UserSerializer(ModelSerializer):
             "is_active",
             "has_basic",
             "has_commission",
-            "password_normal",
+            "password",
             "profile",
             "crm_username",
             "annual_count",
             "fp_id",
         ]
+        extra_kwargs = {"password": {"write_only": True, "required": False}}
         foreign_models = {
             "department": ForeignField("department",Department,'uuid') ,
             "project": ForeignField("project",Project,'uuid') ,
@@ -111,7 +112,15 @@ class UserSerializer(ModelSerializer):
     def create(self, validated_data: dict, *args, **kwargs):
         validated_data.pop("is_superuser",None)
         validated_data.pop("is_staff",None)
-        return super().create(validated_data, *args, **kwargs)
+        password = validated_data.pop("password", None)
+        user = super().create(validated_data, *args, **kwargs)
+        user.set_password(password)
+        user.save()
+        return user
+
+    def update(self, instance, validated_data: dict):
+        validated_data.pop("password", None)
+        return super().update(instance, validated_data)
 
 
 class ArrivingLeavingSerializer(ModelSerializer):

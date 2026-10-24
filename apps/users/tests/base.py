@@ -25,7 +25,7 @@ class BaseUserTestCase(APITestCase):
         # Create superuser
         self.superuser = User.objects.create_superuser(
             username="superuser",
-            password_normal="pass123",
+            password="pass123",
             email="super@test.com",
             role=UserTypes.OWNER, # Or whatever is highest
             project=self.project,
@@ -35,7 +35,7 @@ class BaseUserTestCase(APITestCase):
         # Create normal agent
         self.agent = User.objects.create_user(
             username="agent",
-            password_normal="pass123",
+            password="pass123",
             email="agent@test.com",
             role=UserTypes.AGENT,
             project=self.project,

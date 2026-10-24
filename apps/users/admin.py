@@ -2,6 +2,9 @@ from django.contrib import admin
 from import_export.admin import ImportExportModelAdmin
 from import_export import resources, fields
 from import_export.widgets import ForeignKeyWidget
+from django.contrib.auth.admin import UserAdmin
+from django.contrib.auth.forms import UserChangeForm, UserCreationForm
+from django.contrib.auth.hashers import identify_hasher, make_password
 
 from .models import (
     User , 
@@ -21,6 +24,18 @@ from .models import (
     ReportRecord
 )
 from utils.admin_utils import FieldSets
+
+class UserAdminChangeForm(UserChangeForm):
+    class Meta:
+        model = User
+        fields = "__all__"
+
+
+class UserAdminCreationForm(UserCreationForm):
+    class Meta:
+        model = User
+        fields = ("username",)
+
 
 class UserResource(resources.ModelResource):
     project_name = fields.Field(
@@ -57,21 +72,40 @@ class UserResource(resources.ModelResource):
 
     class Meta:
         model = User
+        import_id_fields = ('username',)
         fields = (
-            'username', 'password_normal','profile__phone','annual_count', 'is_active', "first_name", "last_name", 'project_name', 'role', 'title', 'department_name', 'crm_username', 
+            'username', 'password','profile__phone','annual_count', 'is_active', "first_name", "last_name", 'project_name', 'role', 'title', 'department_name', 'crm_username', 
             'basic_salary', 'set_deduction_rules', 'set_global_commission_rules', 'will_arrive_at', 'will_leave_at'
         )
         export_order = (
-            'username', 'password_normal','profile__phone','annual_count', 'is_active', "first_name", "last_name", 'project_name', 'role', 'title', 'department_name', 'crm_username', 
+            'username', 'password','profile__phone','annual_count', 'is_active', "first_name", "last_name", 'project_name', 'role', 'title', 'department_name', 'crm_username', 
             'basic_salary', 'set_deduction_rules', 'set_global_commission_rules', 'will_arrive_at', 'will_leave_at'
         )
         
+    def before_save_instance(self, instance, using_transactions, dry_run):
+        raw = instance.password
+        if raw:
+            try:
+                identify_hasher(raw)
+            except ValueError:
+                instance.password = make_password(raw)
+        else:
+            instance.set_unusable_password()
+        super().before_save_instance(instance, using_transactions, dry_run)
+
+    def get_export_fields(self):
+        return [f for f in super().get_export_fields() if f.column_name != 'password']
+
     def export(self, *args, queryset=None, **kwargs):
         return super().export(*args, queryset=queryset.filter(is_superuser=False), **kwargs)
 
 # Register your models here..
-class UserAdminSite(ImportExportModelAdmin):
+class UserAdminSite(ImportExportModelAdmin, UserAdmin):
     resource_class = UserResource
+    form = UserAdminChangeForm
+    add_form = UserAdminCreationForm
+    add_fieldsets = ((None, {"fields": ("username", "password1", "password2")}),)
+    ordering = ("username",)
     list_display = ("username","crm_username",'role',"department","project","annual_count","fp_id","is_active","is_staff","is_superuser")
     list_filter = ("project","department","role")
     readonly_fields = ['uuid',"created_at","updated_at"]
@@ -83,7 +117,7 @@ class UserAdminSite(ImportExportModelAdmin):
         ],[
             [
                 'username',
-                'password_normal',
+                'password',
                 'groups',
                 'is_active',
                 'is_staff',

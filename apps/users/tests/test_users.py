@@ -17,7 +17,7 @@ class UserTests(BaseUserTestCase):
         url = "/api/users/user"
         data = {
             "username": "newuser",
-            "password_normal": "pass123",
+            "password": "pass123",
             "role": "AGENT",
             "project": str(self.project.uuid),
             "department": str(self.department.uuid)
@@ -37,7 +37,7 @@ class UserTests(BaseUserTestCase):
 
     def test_delete_user(self):
         self.authenticate_as(self.superuser)
-        user_to_del = User.objects.create_user(username="todel", password_normal="pass123")
+        user_to_del = User.objects.create_user(username="todel", password="pass123")
         url = f"/api/users/user?uuid={user_to_del.uuid}"
         response = self.client.delete(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
