@@ -1,6 +1,6 @@
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
@@ -8,6 +8,7 @@ from rest_framework.status import HTTP_200_OK, HTTP_401_UNAUTHORIZED
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from datetime import datetime
+from hashlib import md5
 from rest_framework.request import Request
 from apps.users.auth import Login
 from auth.constants import AUTH_COOKIE
@@ -88,3 +89,14 @@ def logout(request: Request):
     response = Response({"message":"Logout successfully"})
     response.delete_cookie(AUTH_COOKIE)
     return response
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def permissions(request: Request):
+    """Current user's Django permissions, md5-hashed as the frontend permission store expects."""
+    perms = sorted(request.user.get_all_permissions())
+    return Response({
+        "permissions": [md5(p.encode()).hexdigest() for p in perms],
+        "allowedPages": [],
+    }, HTTP_200_OK)

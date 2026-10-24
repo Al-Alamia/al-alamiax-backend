@@ -90,3 +90,17 @@ class AuthLifecycleTests(BaseUserTestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.data["Authorization"], access)
         self.assertTrue(res.data["refresh"])
+
+
+class PermissionsEndpointTests(BaseUserTestCase):
+    def test_returns_hashed_permissions_for_authenticated_user(self):
+        from hashlib import md5
+        self.authenticate_as(self.superuser)
+        response = self.client.get('/api/users/permissions')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(md5(b'users.add_user').hexdigest(), response.data['permissions'])
+        self.assertEqual(response.data['allowedPages'], [])
+
+    def test_requires_authentication(self):
+        response = self.client.get('/api/users/permissions')
+        self.assertIn(response.status_code, (401, 403))
