@@ -7,7 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.attendance.models import AttendanceDay, AttendanceSettings
-from apps.attendance.permissions import IsManagerPlus, can_view, is_hr_plus, scoped_users
+from apps.attendance.permissions import IsHRPlus, IsManagerPlus, can_view, is_hr_plus, scoped_users
 from apps.attendance.serializers import AttendanceDaySerializer, UserRefSerializer
 from apps.attendance.services.evaluate import recalculate
 from apps.attendance.services.periods import period_key_for, period_range
@@ -124,7 +124,7 @@ def daily(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsManagerPlus])
+@permission_classes([IsHRPlus])
 def recalculate_view(request):
     body = _body(request)
     if body is None:
@@ -138,12 +138,12 @@ def recalculate_view(request):
     users = scoped_users(request.user)
     if body.get("user"):
         uid = _uuid(body["user"])
-        if uid is None:
+        if uid is None or not User.objects.filter(uuid=uid).exists():
             return error("Invalid user", "invalid_user", 400)
         users = users.filter(uuid=uid)
     if body.get("department"):
         dept_id = _uuid(body["department"])
-        if dept_id is None:
+        if dept_id is None or not Department.objects.filter(uuid=dept_id).exists():
             return error("Invalid department", "invalid_department", 400)
         users = users.filter(department__uuid=dept_id)
     return Response({"updated": recalculate(start, end, users, _now())})

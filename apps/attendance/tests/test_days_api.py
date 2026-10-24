@@ -157,6 +157,12 @@ class RecalculateTests(FrozenNowMixin, BaseUserTestCase):
         self.authenticate_as(self.agent)
         self.assertEqual(self.client.post(RECALC, self.body(), format="json").status_code, 403)
 
+    def test_manager_forbidden(self):
+        mgr = User.objects.create_user(username="mgr", password="x", role=UserTypes.MANAGER,
+                                       project=self.project, department=self.department)
+        self.authenticate_as(mgr)
+        self.assertEqual(self.client.post(RECALC, self.body(), format="json").status_code, 403)
+
     def test_range_too_long(self):
         self.authenticate_as(self.superuser)
         r = self.client.post(RECALC, {"from": "2026-08-01", "to": "2026-10-02"}, format="json")  # 63 days
@@ -186,7 +192,9 @@ class RecalculateTests(FrozenNowMixin, BaseUserTestCase):
         r = self.client.post(RECALC, self.body(user=str(self.agent.uuid)), format="json")
         self.assertEqual(r.data["updated"], 2)
         r = self.client.post(RECALC, self.body(department=str(uuid.uuid4())), format="json")
-        self.assertEqual(r.data["updated"], 0)
+        self.assertEqual((r.status_code, r.data["type"]), (400, "invalid_department"))
+        r = self.client.post(RECALC, self.body(user=str(uuid.uuid4())), format="json")
+        self.assertEqual((r.status_code, r.data["type"]), (400, "invalid_user"))
         r = self.client.post(RECALC, self.body(user="bad"), format="json")
         self.assertEqual(r.data["type"], "invalid_user")
         r = self.client.post(RECALC, self.body(department="bad"), format="json")
