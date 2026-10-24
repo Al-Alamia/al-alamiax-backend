@@ -270,7 +270,7 @@ def _policy_fields(body: dict) -> dict:
         out["monthly_late_allowance"] = v
     if "absence_days" in body:
         v = body["absence_days"]
-        if not _is_number(v) or not math.isfinite(v) or not 0 <= v <= 1:
+        if not _is_number(v) or not 0 <= v <= 1 or not math.isfinite(v):
             raise _Invalid("absence_days must be a number between 0 and 1")
         out["absence_days"] = float(v)
     return out
@@ -288,7 +288,7 @@ def _validate_tiers(raw) -> list:
             raise _Invalid("kind must be LATE or EARLY_LEAVE", "invalid_tiers")
         if not _is_int(minutes) or not 1 <= minutes <= 1440:
             raise _Invalid("min_minutes must be an integer between 1 and 1440", "invalid_tiers")
-        if not _is_number(days) or not math.isfinite(days) or not 0 <= days <= 1:
+        if not _is_number(days) or not 0 <= days <= 1 or not math.isfinite(days):
             raise _Invalid("deduction_days must be between 0 and 1", "invalid_tiers")
         if (kind, minutes) in seen:
             raise _Invalid("Duplicate tier for the same kind and min_minutes", "invalid_tiers")

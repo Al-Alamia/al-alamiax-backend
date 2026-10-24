@@ -252,6 +252,13 @@ class PolicyTests(ConfigBase):
                      {"absence_days": 1.5}):
             r = self.client.put(f"{B}policies/{p.uuid}", body, format="json")
             self.assertEqual((r.status_code, r.data["type"]), (400, "validation"), body)
+        huge = "9" * 400
+        r = self.client.generic("PUT", f"{B}policies/{p.uuid}", '{"absence_days": %s}' % huge,
+                                content_type="application/json")
+        self.assertEqual((r.status_code, r.data["type"]), (400, "validation"))
+        raw = '{"tiers": [{"kind": "LATE", "min_minutes": 10, "deduction_days": %s}]}' % huge
+        r = self.client.generic("PUT", f"{B}policies/{p.uuid}", raw, content_type="application/json")
+        self.assertEqual((r.status_code, r.data["type"]), (400, "invalid_tiers"))
         for raw in ('{"absence_days": NaN}', '{"absence_days": Infinity}'):
             r = self.client.generic("PUT", f"{B}policies/{p.uuid}", raw, content_type="application/json")
             self.assertEqual(r.status_code, 400, raw)  # DRF's JSON parser already rejects NaN/Infinity
