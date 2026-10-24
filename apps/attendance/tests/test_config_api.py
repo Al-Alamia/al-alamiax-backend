@@ -58,6 +58,24 @@ class ShiftTests(ConfigBase):
         r = self.client.post(B + "shifts", {"name": "X"}, format="json")
         self.assertEqual(r.status_code, 400)
 
+    def test_bad_bodies_are_400(self):
+        for body in ([1], "x", 5):
+            r = self.client.post(B + "shifts", body, format="json")
+            self.assertEqual(r.status_code, 400, body)
+            r = self.client.post(B + "shift-assignments", body, format="json")
+            self.assertEqual(r.status_code, 400, body)
+        for kw in ({"grace_minutes": "abc"}, {"weekend_days": "x"}, {"name": 5}, {"active": "y"}):
+            r = self.client.post(B + "shifts", self.body(**kw), format="json")
+            self.assertEqual((r.status_code, r.data["type"]), (400, "validation"), kw)
+        s = make_shift()
+        for kw in ({"shift": 5}, {"shift": ["a"]}, {"department": 5}, {"effective_from": 20261101},
+                   {"department": {"a": 1}}):
+            body = {"shift": str(s.uuid), "department": str(self.department.uuid),
+                    "effective_from": "2026-11-01"}
+            body.update(kw)
+            r = self.client.post(B + "shift-assignments", body, format="json")
+            self.assertEqual(r.status_code, 400, kw)
+
     def test_unknown_uuid(self):
         r = self.client.patch(f"{B}shifts/{uuid.uuid4()}", {}, format="json")
         self.assertEqual((r.status_code, r.data["type"]), (404, "not_found"))
@@ -202,12 +220,12 @@ class PolicyTests(ConfigBase):
     def test_put_replaces_tiers(self):
         p = make_policy(self.department, allowance=1, late=[(15, 0.25), (60, 0.5)], early=[(30, 0.25)])
         r = self.client.put(f"{B}policies/{p.uuid}", {
-            "monthly_late_allowance": 5, "absence_days": 2,
+            "monthly_late_allowance": 5, "absence_days": 0.5,
             "tiers": [{"kind": "LATE", "min_minutes": 10, "deduction_days": 0.1},
                       {"kind": "EARLY_LEAVE", "min_minutes": 10, "deduction_days": 1}]}, format="json")
         self.assertEqual(r.status_code, 200, r.data)
         self.assertEqual(r.data["monthly_late_allowance"], 5)
-        self.assertEqual(r.data["absence_days"], 2)
+        self.assertEqual(r.data["absence_days"], 0.5)
         self.assertEqual(sorted((t["kind"], t["min_minutes"]) for t in r.data["tiers"]),
                          [("EARLY_LEAVE", 10), ("LATE", 10)])
         self.assertEqual(DeductionTier.objects.filter(policy=p).count(), 2)
@@ -226,6 +244,29 @@ class PolicyTests(ConfigBase):
             r = self.client.put(f"{B}policies/{p.uuid}", {"tiers": tiers}, format="json")
             self.assertEqual((r.status_code, r.data["type"]), (400, "invalid_tiers"), (tiers, r.data))
         self.assertEqual(list(p.tiers.values_list("min_minutes", flat=True)), [15])
+
+    def test_limits(self):
+        p = make_policy(self.department)
+        t = lambda m=10, d=0.5: [{"kind": "LATE", "min_minutes": m, "deduction_days": d}]
+        for body in ({"monthly_late_allowance": 32}, {"monthly_late_allowance": 10 ** 12},
+                     {"absence_days": 1.5}):
+            r = self.client.put(f"{B}policies/{p.uuid}", body, format="json")
+            self.assertEqual((r.status_code, r.data["type"]), (400, "validation"), body)
+        for raw in ('{"absence_days": NaN}', '{"absence_days": Infinity}'):
+            r = self.client.generic("PUT", f"{B}policies/{p.uuid}", raw, content_type="application/json")
+            self.assertEqual(r.status_code, 400, raw)  # DRF's JSON parser already rejects NaN/Infinity
+        r = self.client.post(B + "policies", {"department": str(self.department.uuid),
+                                              "monthly_late_allowance": 32}, format="json")
+        self.assertEqual(r.status_code, 400)
+        for tiers in (t(m=1441), t(m=10 ** 12)):
+            r = self.client.put(f"{B}policies/{p.uuid}", {"tiers": tiers}, format="json")
+            self.assertEqual((r.status_code, r.data["type"]), (400, "invalid_tiers"), tiers)
+        for d in ("NaN", "Infinity"):
+            raw = '{"tiers": [{"kind": "LATE", "min_minutes": 10, "deduction_days": %s}]}' % d
+            r = self.client.generic("PUT", f"{B}policies/{p.uuid}", raw, content_type="application/json")
+            self.assertEqual(r.status_code, 400, d)
+        for ok in ({"monthly_late_allowance": 31, "absence_days": 1}, {"tiers": t(m=1440, d=1)}):
+            self.assertEqual(self.client.put(f"{B}policies/{p.uuid}", ok, format="json").status_code, 200)
 
     def test_put_validation_and_404(self):
         p = make_policy(self.department)

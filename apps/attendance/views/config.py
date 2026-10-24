@@ -1,4 +1,5 @@
 import ipaddress
+import math
 import uuid as uuid_lib
 from datetime import date, datetime, time
 from typing import Optional
@@ -264,13 +265,13 @@ def _policy_fields(body: dict) -> dict:
     out = {}
     if "monthly_late_allowance" in body:
         v = body["monthly_late_allowance"]
-        if not _is_int(v) or v < 0:
-            raise _Invalid("monthly_late_allowance must be an integer >= 0")
+        if not _is_int(v) or not 0 <= v <= 31:
+            raise _Invalid("monthly_late_allowance must be an integer between 0 and 31")
         out["monthly_late_allowance"] = v
     if "absence_days" in body:
         v = body["absence_days"]
-        if not _is_number(v) or v < 0:
-            raise _Invalid("absence_days must be a number >= 0")
+        if not _is_number(v) or not math.isfinite(v) or not 0 <= v <= 1:
+            raise _Invalid("absence_days must be a number between 0 and 1")
         out["absence_days"] = float(v)
     return out
 
@@ -285,9 +286,9 @@ def _validate_tiers(raw) -> list:
         kind, minutes, days = t.get("kind"), t.get("min_minutes"), t.get("deduction_days")
         if kind not in TierKind.values:
             raise _Invalid("kind must be LATE or EARLY_LEAVE", "invalid_tiers")
-        if not _is_int(minutes) or minutes < 1:
-            raise _Invalid("min_minutes must be an integer >= 1", "invalid_tiers")
-        if not _is_number(days) or not 0 <= days <= 1:
+        if not _is_int(minutes) or not 1 <= minutes <= 1440:
+            raise _Invalid("min_minutes must be an integer between 1 and 1440", "invalid_tiers")
+        if not _is_number(days) or not math.isfinite(days) or not 0 <= days <= 1:
             raise _Invalid("deduction_days must be between 0 and 1", "invalid_tiers")
         if (kind, minutes) in seen:
             raise _Invalid("Duplicate tier for the same kind and min_minutes", "invalid_tiers")
