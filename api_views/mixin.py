@@ -5,8 +5,9 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.request import Request
 from typing import List , Dict
 from .parser import RequestParser
-from django.db.models import Model
+from django.db.models import Model, BooleanField, NullBooleanField
 from django.db.models import QuerySet
+from django.core.exceptions import FieldDoesNotExist
 from .exceptions import CreationFaildException, UpdateFaildException
 
 
@@ -26,7 +27,8 @@ class APIViewMixins(APIView):
 
     def _get(self,request:Request):
         parser = RequestParser( request , self.search_filters)
-        queryset = self.model.objects.filter(**parser.params).all().distinct().order_by(*self.order_by)
+        params = self.coerce_boolean_params(parser.params)
+        queryset = self.model.objects.filter(**params).all().distinct().order_by(*self.order_by)
         queryset = self.filter_queryset_with_permissions(queryset)
         if self.pagination_class :
             return self.get_pagination_data(queryset,request)
@@ -71,6 +73,26 @@ class APIViewMixins(APIView):
         
 
  
+    def coerce_boolean_params(self, params:Dict) -> Dict:
+        """Turn "true"/"false" query strings into bools for BooleanField lookups."""
+        coerced = dict(params)
+        for key, value in params.items():
+            if not isinstance(value, str):
+                continue
+            name, _, lookup = key.partition('__')
+            try:
+                field = self.model._meta.get_field(name)
+            except FieldDoesNotExist:
+                continue
+            if lookup not in ('', 'exact') or not isinstance(field, (BooleanField, NullBooleanField)):
+                continue
+            lowered = value.strip().lower()
+            if lowered in ('true', '1', 'yes'):
+                coerced[key] = True
+            elif lowered in ('false', '0', 'no'):
+                coerced[key] = False
+        return coerced
+
     def filter_queryset_with_permissions(self,queryset:QuerySet)->QuerySet:
         filter_kwargs = {}
         exclode_kwargs = {}

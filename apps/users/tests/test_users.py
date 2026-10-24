@@ -42,3 +42,16 @@ class UserTests(BaseUserTestCase):
         response = self.client.delete(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(User.objects.filter(username="todel").count(), 0)
+
+
+class UserBooleanFilterTests(BaseUserTestCase):
+    def test_is_active_accepts_lowercase_true_false(self):
+        self.agent.is_active = False
+        self.agent.save()
+        self.authenticate_as(self.superuser)
+        active = self.client.get('/api/users/user?page_size=1000&is_active=true')
+        self.assertEqual(active.status_code, 200)
+        self.assertTrue(all(u['is_active'] for u in active.data['results']))
+        inactive = self.client.get('/api/users/user?is_active=false')
+        self.assertEqual(inactive.status_code, 200)
+        self.assertIn(str(self.agent.uuid), [u['uuid'] for u in inactive.data['results']])
