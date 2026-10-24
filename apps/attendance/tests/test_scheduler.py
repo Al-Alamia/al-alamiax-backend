@@ -61,3 +61,21 @@ class SchedulerTests(TestCase):
             self.assertEqual(nightly.run_nightly(NOW), 5)
         start, end, _users = m.call_args[0][:3]
         self.assertEqual((start, end), (NOW.date() - timedelta(days=2), NOW.date() - timedelta(days=1)))
+
+
+class SchedulerResilienceTests(TestCase):
+    def test_db_error_is_logged_not_raised(self):
+        with mock.patch.object(sched.AttendanceSettings, "get", side_effect=RuntimeError("no such table")):
+            out = run_once()
+        self.assertIn("no such table", out)
+
+    def test_failing_device_retried_only_once_per_interval(self):
+        make_device("10.0.0.1")
+        cmd = sched.Command(stdout=StringIO())
+        with mock.patch.object(sched, "sync_all", side_effect=OSError("down")) as m:
+            cmd.tick(NOW)
+            cmd.tick(NOW + timedelta(minutes=1))
+            cmd.tick(NOW + timedelta(minutes=59))
+            self.assertEqual(m.call_count, 1)
+            cmd.tick(NOW + timedelta(minutes=61))
+            self.assertEqual(m.call_count, 2)

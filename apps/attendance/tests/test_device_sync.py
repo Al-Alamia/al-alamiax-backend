@@ -122,6 +122,17 @@ class SyncAllTests(SyncBase):
         self.assertTrue(device_sync.acquire_lock(NOW))
 
 
+class LockReleaseTests(SyncBase):
+    def test_release_only_clears_own_lock(self):
+        self.assertTrue(device_sync.acquire_lock(NOW))
+        takeover = NOW + timedelta(minutes=11)
+        self.assertTrue(device_sync.acquire_lock(takeover))
+        device_sync.release_lock(NOW)  # the stale run finishing late
+        self.assertEqual(AttendanceSettings.get().sync_started_at, takeover)
+        device_sync.release_lock(takeover)
+        self.assertIsNone(AttendanceSettings.get().sync_started_at)
+
+
 class SyncApiTests(SyncBase):
     def setUp(self):
         super().setUp()

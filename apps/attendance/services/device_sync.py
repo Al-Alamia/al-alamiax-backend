@@ -27,8 +27,12 @@ def acquire_lock(now: datetime) -> bool:
     return taken == 1
 
 
-def release_lock() -> None:
-    AttendanceSettings.objects.update(sync_started_at=None)
+def release_lock(started_at: Optional[datetime] = None) -> None:
+    """Clear the lock; with ``started_at`` only if it is still the lock this run took."""
+    qs = AttendanceSettings.objects.all()
+    if started_at is not None:
+        qs = qs.filter(sync_started_at=started_at)
+    qs.update(sync_started_at=None)
 
 
 def _sync_device(config: ZKConfig, now: datetime) -> int:
@@ -74,5 +78,5 @@ def sync_all(now: Optional[datetime] = None) -> List[dict]:
                 result.update(ok=False, error=str(e) or e.__class__.__name__)
             results.append(result)
     finally:
-        release_lock()
+        release_lock(now)
     return results

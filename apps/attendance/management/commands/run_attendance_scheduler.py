@@ -24,6 +24,8 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--once", action="store_true", help="Run a single iteration and exit")
 
+    last_sync_attempt = None  # in-memory: at most one sync attempt per interval, success or not
+
     def log(self, message: str) -> None:
         self.stdout.write(f"[{_now():%Y-%m-%d %H:%M:%S}] {message}")
         self.stdout.flush()
@@ -47,9 +49,13 @@ class Command(BaseCommand):
             self.log("nightly pass failed:\n" + traceback.format_exc())
 
     def maybe_sync(self, now: datetime) -> None:
-        threshold = now - timedelta(minutes=AttendanceSettings.get().device_sync_minutes)
+        interval = timedelta(minutes=AttendanceSettings.get().device_sync_minutes)
+        if self.last_sync_attempt is not None and now - self.last_sync_attempt < interval:
+            return
+        threshold = now - interval
         if not ZKConfig.objects.filter(Q(last_synced_at__isnull=True) | Q(last_synced_at__lt=threshold)).exists():
             return
+        self.last_sync_attempt = now
         try:
             results = sync_all(now)
         except SyncBusy:

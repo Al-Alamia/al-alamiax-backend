@@ -20,7 +20,9 @@ while True:
 PY
 fi
 
-python manage.py migrate --noinput
+if [ "$SKIP_MIGRATE" != "1" ]; then
+    python manage.py migrate --noinput
+fi
 
 if [ "$SKIP_COLLECTSTATIC" != "1" ]; then
     python manage.py collectstatic --noinput
