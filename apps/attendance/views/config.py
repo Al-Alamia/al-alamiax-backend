@@ -11,6 +11,7 @@ from rest_framework.response import Response
 from apps.attendance.models import (AttendanceSettings, DeductionPolicy, DeductionTier, Holiday, Shift,
                                     ShiftAssignment, WebPunchPolicy)
 from apps.attendance.permissions import AuthenticatedReadHRWrite, IsHRPlus, ManagerReadHRWrite
+from apps.attendance.services.device_sync import SyncBusy, sync_all
 from apps.attendance.serializers import (assignment_data, device_data, holiday_data, policy_data,
                                          settings_data, shift_data, web_punch_policy_data)
 from apps.attendance.types import TierKind
@@ -419,3 +420,13 @@ def settings(request):
 @permission_classes([IsHRPlus])
 def devices(request):
     return Response([device_data(z) for z in ZKConfig.objects.order_by("name", "ip")])
+
+
+@api_view(["POST"])
+@permission_classes([IsHRPlus])
+def sync_devices(request):
+    try:
+        results = sync_all(_now())
+    except SyncBusy:
+        return error("A device sync is already running", "sync_running", 409)
+    return Response({"results": results})

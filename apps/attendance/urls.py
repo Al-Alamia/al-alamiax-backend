@@ -22,4 +22,5 @@ urlpatterns = [
     path("web-punch-policies/<uuid:uuid>", config.web_punch_policy_detail),
     path("settings", config.settings),
     path("devices", config.devices),
+    path("devices/sync", config.sync_devices),
 ]
