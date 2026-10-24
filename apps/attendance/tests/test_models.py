@@ -5,6 +5,7 @@ from django.db import IntegrityError, transaction
 from apps.attendance.models import (
     AttendanceSettings,
     DeductionPolicy,
+    Holiday,
     Punch,
     Shift,
     ShiftAssignment,
@@ -58,3 +59,18 @@ class AttendanceModelsTests(BaseUserTestCase):
 
     def test_global_policy_exists_after_migrations(self):
         self.assertEqual(DeductionPolicy.objects.filter(department__isnull=True).count(), 1)
+
+    def test_global_holiday_unique_per_date(self):
+        from apps.users.models import Department
+        d = datetime.date(2026, 10, 6)
+        Holiday.objects.create(date=d, name="a")
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            Holiday.objects.create(date=d, name="b")
+        other = Department.objects.create(name="Other")
+        Holiday.objects.create(date=d, name="c", department=self.department)
+        Holiday.objects.create(date=d, name="d", department=other)
+
+    def test_single_global_policy(self):
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            DeductionPolicy.objects.create(department=None)
+        DeductionPolicy.objects.create(department=self.department)

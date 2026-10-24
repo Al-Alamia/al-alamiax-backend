@@ -75,6 +75,9 @@ class Holiday(BaseModel):
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=["date", "department"], name="holiday_unique_date_department"),
+            # NULLs are distinct in unique indexes, so global holidays need their own constraint
+            models.UniqueConstraint(fields=["date"], condition=Q(department__isnull=True),
+                                    name="holiday_unique_global_date"),
         ]
 
     def __str__(self):
@@ -86,9 +89,22 @@ class DeductionPolicy(BaseModel):
                                       related_name="deduction_policy")
     monthly_late_allowance = models.PositiveIntegerField(default=0)
     absence_days = models.FloatField(default=1.0)
+    # True exactly when department is NULL; lets a conditional unique index allow a single global row
+    is_global = models.BooleanField(default=False, editable=False)
 
     class Meta:
         verbose_name_plural = "Deduction policies"
+        constraints = [
+            models.UniqueConstraint(fields=["is_global"], condition=Q(is_global=True),
+                                    name="deductionpolicy_single_global"),
+        ]
+
+    def save(self, *args, **kwargs):
+        self.is_global = self.department_id is None
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            kwargs["update_fields"] = set(update_fields) | {"is_global"}
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"Policy {self.department or 'global'}"
