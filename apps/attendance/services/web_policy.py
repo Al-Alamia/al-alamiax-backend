@@ -12,8 +12,11 @@ def client_ip(request) -> str:
     if getattr(settings, "ATTENDANCE_TRUST_PROXY", False):
         forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
         first = forwarded.split(",")[0].strip()
-        if first:
+        try:
+            ipaddress.ip_address(first)
             return first
+        except ValueError:
+            pass
     return request.META.get("REMOTE_ADDR", "")
 
 
@@ -22,7 +25,9 @@ def _ip_allowed(ip: str, allowed) -> bool:
         addr = ipaddress.ip_address(ip)
     except ValueError:
         return False
-    for entry in allowed or []:
+    if not isinstance(allowed, list):
+        return False
+    for entry in allowed:
         try:
             if addr in ipaddress.ip_network(str(entry).strip(), strict=False):
                 return True

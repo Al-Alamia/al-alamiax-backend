@@ -17,6 +17,16 @@ from apps.attendance.views import error
 from apps.users.models import User
 
 TOO_SOON = timedelta(seconds=60)
+MAX_UNIQUE_ID = 100
+
+
+def _now() -> datetime:
+    return datetime.now()
+
+
+def _body(request) -> Optional[dict]:
+    data = request.data
+    return data if isinstance(data, dict) or hasattr(data, "getlist") else None
 
 
 def _day_punches(user, d: date):
@@ -53,25 +63,28 @@ def _today_payload(user, now: datetime, unique_id: Optional[str], ip: str) -> di
 @permission_classes([IsAuthenticated])
 def web_punch(request):
     user = request.user
-    unique_id = request.data.get("unique_id")
+    body = _body(request) or {}
+    unique_id = body.get("unique_id")
+    if unique_id is not None and (not isinstance(unique_id, str) or len(unique_id) > MAX_UNIQUE_ID):
+        return error("unique_id must be a string of at most 100 characters", "invalid_unique_id", 400)
     ip = web_policy.client_ip(request)
     reason = web_policy.check(user, unique_id, ip)
     if reason:
         return error("Punch not allowed from this device or network", reason, 403)
-    now = datetime.now().replace(microsecond=0)
+    now = _now().replace(microsecond=0)
     last = Punch.objects.filter(user=user).order_by("-timestamp").first()
     if last is not None and timedelta(0) <= now - last.timestamp < TOO_SOON:
         return error("You punched less than a minute ago", "too_soon", 409)
     Punch.objects.create(user=user, timestamp=now, source=PunchSource.WEB, ip=ip or None,
                          browser_id=unique_id or "")
-    evaluate_and_allow(user, day_for_punch(user, now))
+    evaluate_and_allow(user, day_for_punch(user, now), now)
     return Response(_today_payload(user, now, unique_id, ip))
 
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def today(request):
-    return Response(_today_payload(request.user, datetime.now(), request.query_params.get("unique_id"),
+    return Response(_today_payload(request.user, _now(), request.query_params.get("unique_id"),
                                    web_policy.client_ip(request)))
 
 
@@ -101,7 +114,7 @@ def _list_punches(request):
         return error("Not allowed to view this user", "forbidden", 403)
     raw_date = request.query_params.get("date")
     try:
-        d = date.fromisoformat(raw_date) if raw_date else datetime.now().date()
+        d = date.fromisoformat(raw_date) if raw_date else _now().date()
     except ValueError:
         return error("Invalid date", "invalid_date", 400)
     return Response(PunchSerializer(_day_punches(target, d), many=True).data)
@@ -110,18 +123,21 @@ def _list_punches(request):
 def _create_punch(request):
     if not IsManagerPlus().has_permission(request, None):
         return error("Not allowed", "forbidden", 403)
-    target = _get_user(request.data.get("user"))
+    body = _body(request)
+    if body is None:
+        return error("Request body must be a JSON object", "invalid_body", 400)
+    target = _get_user(body.get("user"))
     if target is None:
         return error("Invalid user", "invalid_user", 400)
     if not can_correct(request.user, target):
         return error("Not allowed to correct this user", "forbidden", 403)
-    note = request.data.get("note")
+    note = body.get("note")
     if not isinstance(note, str) or not note.strip():
         return error("A note is required", "note_required", 400)
-    ts = _parse_timestamp(request.data.get("timestamp"))
+    ts = _parse_timestamp(body.get("timestamp"))
     if ts is None:
         return error("timestamp must be YYYY-MM-DDTHH:MM[:SS]", "invalid_timestamp", 400)
-    if ts > datetime.now():
+    if ts > _now():
         return error("timestamp cannot be in the future", "future_timestamp", 400)
     punch = Punch.objects.create(user=target, timestamp=ts, source=PunchSource.MANUAL,
                                  created_by=request.user, note=note.strip()[:255])

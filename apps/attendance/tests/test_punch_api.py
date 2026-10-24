@@ -2,6 +2,8 @@ import datetime
 import uuid
 from datetime import datetime as dt, timedelta
 
+from unittest import mock
+
 from django.test import override_settings
 
 from apps.attendance.models import AttendanceDay, Punch, WebPunchPolicy
@@ -14,9 +16,18 @@ from apps.users.types import UserTypes
 PUNCH = "/api/attendance/punch"
 TODAY = "/api/attendance/today"
 PUNCHES = "/api/attendance/punches"
+NOW = dt(2026, 10, 21, 12, 0, 0)  # a Wednesday, frozen so tests never straddle midnight
 
 
-class WebPunchTests(BaseUserTestCase):
+class FrozenNowMixin:
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch("apps.attendance.views.punch._now", return_value=NOW)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+
+class WebPunchTests(FrozenNowMixin, BaseUserTestCase):
     def setUp(self):
         super().setUp()
         self.authenticate_as(self.agent)
@@ -38,7 +49,7 @@ class WebPunchTests(BaseUserTestCase):
         self.assertEqual(r.data["type"], "too_soon")
 
     def test_throttle_counts_any_source(self):
-        punch(self.agent, dt.now() - timedelta(seconds=10), source=PunchSource.MANUAL)
+        punch(self.agent, NOW - timedelta(seconds=10), source=PunchSource.MANUAL)
         self.assertEqual(self.client.post(PUNCH, {}, format="json").status_code, 409)
 
     def test_trusted_device(self):
@@ -79,7 +90,7 @@ class WebPunchTests(BaseUserTestCase):
         self.assertTrue(AttendanceDay.objects.filter(user=self.agent, date=r.data["date"]).exists())
 
 
-class TodayTests(BaseUserTestCase):
+class TodayTests(FrozenNowMixin, BaseUserTestCase):
     def setUp(self):
         super().setUp()
         self.authenticate_as(self.agent)
@@ -90,7 +101,7 @@ class TodayTests(BaseUserTestCase):
         self.assertIsNone(r.data["shift"])
         self.assertTrue(r.data["can_punch"])
         self.assertIsNone(r.data["blocked_reason"])
-        self.assertEqual(r.data["date"], dt.now().date().isoformat())
+        self.assertEqual(r.data["date"], NOW.date().isoformat())
         self.assertEqual(r.data["punches"], [])
 
     def test_blocked(self):
@@ -114,7 +125,7 @@ class TodayTests(BaseUserTestCase):
         self.assertIn(self.client.get(TODAY).status_code, (401, 403))
 
 
-class PunchesApiTests(BaseUserTestCase):
+class PunchesApiTests(FrozenNowMixin, BaseUserTestCase):
     def setUp(self):
         super().setUp()
         from apps.users.models import Department
@@ -125,7 +136,7 @@ class PunchesApiTests(BaseUserTestCase):
                                                 department=self.department)
         self.other_mgr = User.objects.create_user(username="mgr2", password="x", role=UserTypes.MANAGER,
                                                   department=self.other_dept)
-        self.past = (dt.now() - timedelta(days=2)).replace(hour=10, minute=0, second=0, microsecond=0)
+        self.past = (NOW - timedelta(days=2)).replace(hour=10, minute=0, second=0, microsecond=0)
         self.body = {"user": str(self.agent.uuid), "timestamp": self.past.strftime("%Y-%m-%dT%H:%M"),
                      "note": "forgot"}
 
@@ -142,7 +153,7 @@ class PunchesApiTests(BaseUserTestCase):
     def test_create_validation(self):
         self.authenticate_as(self.hr)
         for patch in ({"note": ""}, {"note": None}, {"timestamp": "garbage"},
-                      {"timestamp": (dt.now() + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")},
+                      {"timestamp": (NOW + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")},
                       {"timestamp": None}):
             r = self.client.post(PUNCHES, {**self.body, **patch}, format="json")
             self.assertEqual(r.status_code, 400, patch)
@@ -225,3 +236,56 @@ class PunchesApiTests(BaseUserTestCase):
         self.authenticate_as(self.hr)
         r = self.client.get(f"{PUNCHES}?user={self.agent.uuid}&date=2026-09-14")
         self.assertEqual([p["uuid"] for p in r.data], [str(a.uuid)])
+
+    def test_inactive_user_history_stays_visible(self):
+        self.agent.is_active = False
+        self.agent.save()
+        punch(self.agent, self.past)
+        url = f"{PUNCHES}?user={self.agent.uuid}&date={self.past.date()}"
+        for viewer in (self.hr, self.manager):
+            self.authenticate_as(viewer)
+            r = self.client.get(url)
+            self.assertEqual((r.status_code, len(r.data)), (200, 1))
+        self.authenticate_as(self.other_mgr)
+        self.assertEqual(self.client.get(url).status_code, 403)
+
+    def test_non_object_body_on_create_is_400(self):
+        self.authenticate_as(self.hr)
+        for body in ([1, 2], "x", 5):
+            r = self.client.post(PUNCHES, body, format="json")
+            self.assertEqual((r.status_code, r.data["type"]), (400, "invalid_body"))
+
+
+class PunchInputHardeningTests(FrozenNowMixin, BaseUserTestCase):
+    def setUp(self):
+        super().setUp()
+        self.authenticate_as(self.agent)
+
+    def test_long_or_non_string_unique_id_is_400(self):
+        for value in ("x" * 101, 123, ["a"]):
+            r = self.client.post(PUNCH, {"unique_id": value}, format="json")
+            self.assertEqual((r.status_code, r.data["type"]), (400, "invalid_unique_id"), value)
+        self.assertEqual(self.client.post(PUNCH, {"unique_id": "x" * 100}, format="json").status_code, 200)
+
+    def test_non_object_body_is_treated_as_empty(self):
+        self.assertEqual(self.client.post(PUNCH, [1], format="json").status_code, 200)
+
+    def test_malformed_allowed_ip_entry_is_skipped(self):
+        WebPunchPolicy.objects.create(department=self.department, require_office_ip=True,
+                                      allowed_ips=["not-an-ip", "10.0.0.0/8"])
+        self.assertEqual(self.client.post(PUNCH, {}, format="json", REMOTE_ADDR="10.9.9.9").status_code, 200)
+        r = self.client.post(PUNCH, {}, format="json", REMOTE_ADDR="192.168.0.1")
+        self.assertEqual((r.status_code, r.data["type"]), (403, "ip_not_allowed"))
+
+    def test_allowed_ips_not_a_list_fails_closed(self):
+        WebPunchPolicy.objects.create(department=self.department, require_office_ip=True,
+                                      allowed_ips="10.0.0.0/8")
+        r = self.client.post(PUNCH, {}, format="json", REMOTE_ADDR="10.1.1.1")
+        self.assertEqual(r.status_code, 403)
+
+    def test_invalid_forwarded_for_falls_back_to_remote_addr(self):
+        with override_settings(ATTENDANCE_TRUST_PROXY=True):
+            r = self.client.post(PUNCH, {}, format="json", REMOTE_ADDR="10.1.1.1",
+                                 HTTP_X_FORWARDED_FOR="garbage")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["punches"][0]["ip"], "10.1.1.1")

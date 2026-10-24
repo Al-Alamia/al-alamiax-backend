@@ -24,10 +24,13 @@ def scoped_users(user):
 
 
 def can_view(viewer, target) -> bool:
+    """Deliberately ignores ``is_active``: HR and managers may view a deactivated employee's history
+    (``scoped_users``, used for lists such as the daily board, shows active users only)."""
     return viewer.pk == target.pk or is_hr_plus(viewer) or _is_manager_of(viewer, target)
 
 
 def can_correct(viewer, target) -> bool:
+    """Like ``can_view``, deliberately ignores ``is_active`` so history of deactivated users stays correctable."""
     return is_hr_plus(viewer) or _is_manager_of(viewer, target)
 
 

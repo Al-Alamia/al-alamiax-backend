@@ -47,3 +47,10 @@ class ScopeTests(BaseUserTestCase):
         m = User.objects.create(username="m2", role=UserTypes.MANAGER, department=None)
         self.assertEqual(set(scoped_users(m)), {m})
         self.assertFalse(can_correct(m, self.agent))
+
+    def test_scoped_users_excludes_inactive_but_can_view_does_not(self):
+        gone = User.objects.create(username="gone", role=UserTypes.AGENT, department=self.d1, is_active=False)
+        self.assertNotIn(gone, scoped_users(self.manager))
+        self.assertNotIn(gone, scoped_users(self.hr))
+        self.assertTrue(can_view(self.manager, gone))
+        self.assertTrue(can_correct(self.hr, gone))
