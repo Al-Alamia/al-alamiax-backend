@@ -233,3 +233,6 @@ CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 
 
+
+# Trust the first X-Forwarded-For entry for punch IP checks (off: browser hits gunicorn directly)
+ATTENDANCE_TRUST_PROXY = os.environ.get('ATTENDANCE_TRUST_PROXY', '0') == '1'
