@@ -77,3 +77,13 @@ class ShiftResolutionTests(BaseUserTestCase):
                                          project=self.project,
                                          department=Department.objects.create(name="Other"))
         self.assertEqual(policy_for(other), glob)
+
+
+class ShiftChangeOwnershipTests(BaseUserTestCase):
+    def test_day_for_punch_prefers_closest_shift_on_change(self):
+        night = make_shift(name="Night", start_time=dt.time(22), end_time=dt.time(6))
+        morning = make_shift(name="Morning")
+        assign(night, department=self.department, effective_from=D(2026, 9, 1))
+        assign(morning, department=self.department, effective_from=D(2026, 10, 6))
+        self.assertEqual(day_for_punch(self.agent, dt.datetime(2026, 10, 6, 9)), D(2026, 10, 6))
+        self.assertEqual(day_for_punch(self.agent, dt.datetime(2026, 10, 6, 6, 30)), D(2026, 10, 5))

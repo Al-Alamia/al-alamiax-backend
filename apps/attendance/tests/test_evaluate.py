@@ -219,3 +219,26 @@ class EvaluateDayTests(BaseUserTestCase):
         make_policy(department=self.department, late=[(15, 0.75)])
         punch(self.agent, at(9, 30)); punch(self.agent, at(17))
         self.assertAlmostEqual(self.ev().deduction_days, 0.75)
+
+    def test_shift_change_punch_not_double_counted(self):
+        night = make_shift(name="Night", start_time=dt.time(22), end_time=dt.time(6), grace_minutes=0)
+        assign(night, user=self.agent, effective_from=D(2026, 10, 1))
+        tue = D(2026, 10, 6)
+        assign(self.shift, user=self.agent, effective_from=tue)
+        punch(self.agent, at(22)); punch(self.agent, at(6, day=tue))
+        punch(self.agent, at(9, day=tue)); punch(self.agent, at(17, day=tue))
+        d1 = self.ev()
+        self.assertEqual(d1.first_in, at(22))
+        self.assertEqual(d1.last_out, at(6, day=tue))
+        self.assertEqual(d1.early_leave_minutes, 0)
+        d2 = self.ev(d=tue)
+        self.assertEqual(d2.first_in, at(9, day=tue))
+        self.assertEqual(d2.last_out, at(17, day=tue))
+
+    def test_incomplete_late_day_consumes_allowance(self):
+        make_policy(allowance=1, late=[(15, 0.25)])
+        punch(self.agent, at(9, 30))
+        day = evaluate_and_allow(self.agent, MON, dt.datetime(2026, 10, 6))
+        self.assertEqual(day.status, DayStatus.INCOMPLETE)
+        self.assertTrue(day.late_excused_by_allowance)
+        self.assertEqual(day.deduction_days, 0)

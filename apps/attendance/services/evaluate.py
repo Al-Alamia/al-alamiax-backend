@@ -1,11 +1,14 @@
 from datetime import date, datetime, timedelta
 from typing import Optional
 
+from django.db import transaction
+from django.db.models import Q
+
 from apps.attendance.models import AttendanceDay, AttendanceSettings, Holiday, Punch
 from apps.attendance.types import DayStatus, TierKind
 
 from .periods import period_key_for, period_range
-from .shifts import is_closed, policy_for, resolve_shift, shift_window
+from .shifts import is_closed, owner_day, policy_for, resolve_shift, shift_window, windows_for
 
 
 def _minutes(delta: timedelta) -> int:
@@ -45,15 +48,19 @@ def evaluate_day(user, d: date, now: Optional[datetime] = None) -> Optional[Atte
         return save()
 
     window = shift_window(shift, d)
-    punches = list(Punch.objects.filter(user=user, timestamp__gte=window.window_start,
-                                        timestamp__lt=window.window_end)
-                   .order_by("timestamp").values_list("timestamp", flat=True))
+    # A punch in this window may belong to a neighbouring day when shifts change; see owner_day
+    windows = windows_for(user, [d + timedelta(days=i) for i in (-2, -1, 0, 1)])
+    punches = [ts for ts in (Punch.objects.filter(user=user, timestamp__gte=window.window_start,
+                                                  timestamp__lt=window.window_end)
+                             .order_by("timestamp").values_list("timestamp", flat=True))
+               if owner_day(ts, windows) == d]
     first_in = punches[0] if punches else None
     last_out = punches[-1] if len(punches) > 1 else None
     closed = is_closed(window, now)
-    holiday = (Holiday.objects.filter(date=d).filter(department__isnull=True).exists()
-               or (user.department_id is not None
-                   and Holiday.objects.filter(date=d, department_id=user.department_id).exists()))
+    holiday_q = Q(department__isnull=True)
+    if user.department_id is not None:
+        holiday_q |= Q(department_id=user.department_id)
+    holiday = Holiday.objects.filter(holiday_q, date=d).exists()
     is_weekend = d.weekday() in (shift.weekend_days or [])
     fields.update(shift=shift, shift_name=shift.name, expected_start=window.expected_start,
                   expected_end=window.expected_end, grace_minutes=shift.grace_minutes,
@@ -112,6 +119,7 @@ def evaluate_and_allow(user, d: date, now: Optional[datetime] = None) -> Optiona
     return day
 
 
+@transaction.atomic
 def recalculate(start: date, end: date, users, now: Optional[datetime] = None) -> int:
     """Re-evaluate every user/date in [start, end]; returns the number of rows produced."""
     now = now or datetime.now()

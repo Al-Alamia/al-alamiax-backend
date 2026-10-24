@@ -37,21 +37,53 @@ def is_closed(window: ShiftWindow, now: datetime) -> bool:
     return now >= window.window_end
 
 
+def windows_for(user, days) -> "dict[date, ShiftWindow]":
+    """Shift windows of ``user`` for each of ``days`` that has a shift."""
+    out = {}
+    for d in days:
+        shift = resolve_shift(user, d)
+        if shift is not None:
+            out[d] = shift_window(shift, d)
+    return out
+
+
+def owner_day(ts: datetime, windows: "dict[date, ShiftWindow]") -> date:
+    """Pure rule: which day owns ``ts``, given the windows of at least ts.date()-1 and ts.date().
+
+    Candidates are ts.date()-1 and ts.date(); a candidate counts if it has a shift whose window
+    contains ``ts``. When both do, the day whose expected interval is closest to ``ts`` wins
+    (ties go to the later day). With no qualifying candidate the answer is ts.date().
+    """
+    best = None
+    for cand in (ts.date() - timedelta(days=1), ts.date()):
+        w = windows.get(cand)
+        if w is None or not (w.window_start <= ts < w.window_end):
+            continue
+        if ts < w.expected_start:
+            dist = w.expected_start - ts
+        elif ts > w.expected_end:
+            dist = ts - w.expected_end
+        else:
+            dist = timedelta(0)
+        if best is None or dist <= best[0]:  # later candidate wins ties
+            best = (dist, cand)
+    return best[1] if best else ts.date()
+
+
 def day_for_punch(user, ts: datetime) -> date:
-    """The attendance day a punch belongs to: yesterday if it falls in yesterday's shift window."""
-    prev = ts.date() - timedelta(days=1)
-    shift = resolve_shift(user, prev)
-    if shift is not None:
-        w = shift_window(shift, prev)
-        if w.window_start <= ts < w.window_end:
-            return prev
-    return ts.date()
+    """The attendance day a punch belongs to (see ``owner_day``)."""
+    d = ts.date()
+    return owner_day(ts, windows_for(user, [d - timedelta(days=1), d]))
 
 
 def policy_for(user) -> DeductionPolicy:
+    qs = DeductionPolicy.objects.prefetch_related("tiers")
     if user.department_id is not None:
-        policy = DeductionPolicy.objects.filter(department_id=user.department_id).first()
+        policy = qs.filter(department_id=user.department_id).first()
         if policy is not None:
             return policy
-    policy, _ = DeductionPolicy.objects.get_or_create(department=None)
+    policy = qs.filter(department=None).first()
+    if policy is None:
+        DeductionPolicy.objects.create(department=None)
+        policy = qs.get(department=None)
     return policy
