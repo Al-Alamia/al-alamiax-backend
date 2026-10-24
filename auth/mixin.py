@@ -116,7 +116,9 @@ class LoginMixins(metaclass=ABCMeta):
 
     def check_body(self , request:Request):
         try :
-            return json.loads(request.body)
+            data = json.loads(request.body)
+            if isinstance(data, dict):
+                return data
         except (json.JSONDecodeError, UnicodeDecodeError): ...
         return {}
 

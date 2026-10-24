@@ -12,7 +12,8 @@ class AuthTests(BaseUserTestCase):
         response = self.client.post(url, data, format='json')
         if response.status_code != 200: print(f"DEBUG Login Superuser: {response.data}")
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("access", response.data)
+        self.assertIn("Authorization", response.data)
+        self.assertIn("refresh", response.data)
         self.assertEqual(response.data["username"], "superuser")
 
     def test_login_agent_with_device(self):
@@ -24,7 +25,8 @@ class AuthTests(BaseUserTestCase):
         }
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("access", response.data)
+        self.assertIn("Authorization", response.data)
+        self.assertIn("refresh", response.data)
         self.assertEqual(response.data["username"], "agent")
 
     def test_login_agent_no_device(self):

@@ -4,15 +4,14 @@ from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.exceptions import TokenError, InvalidToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.tokens import RefreshToken, AccessToken
+from rest_framework.status import HTTP_200_OK, HTTP_401_UNAUTHORIZED
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from datetime import datetime
-from apps.users.models import User
-from rest_framework.status import  HTTP_401_UNAUTHORIZED , HTTP_200_OK
 from rest_framework.request import Request
 from apps.users.auth import Login
 from auth.constants import AUTH_COOKIE
-from rest_framework.status import HTTP_200_OK,HTTP_401_UNAUTHORIZED
-from apps.users.models import FingerPrintID
+from apps.users.models import User, FingerPrintID
 from apps.users.serializers import FingerPrintIDSerializer
 
 
@@ -66,7 +65,7 @@ def token_refresh(request: Request):
         serializer.is_valid(raise_exception=True)
         access = serializer.validated_data["access"]
         new_refresh = serializer.validated_data.get("refresh", value)
-    except Exception as e:
+    except (TokenError, InvalidToken, ValueError, ValidationError) as e:
         return _unauthorized(str(e), e.__class__.__name__)
     exp = AccessToken(access)["exp"]
     return Response({

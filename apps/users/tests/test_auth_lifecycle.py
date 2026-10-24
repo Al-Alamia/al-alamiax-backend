@@ -81,3 +81,12 @@ class AuthLifecycleTests(BaseUserTestCase):
         self.assertEqual(
             self.client.post(LOGOUT, {"refresh": "x"}, format="json").status_code, 200
         )
+
+    def test_login_with_existing_access_token(self):
+        access = self._login().data["Authorization"]
+        res = self.client.post(
+            LOGIN, {"unique_id": "test-device-id"}, format="json", HTTP_AUTHORIZATION=f"Bearer {access}"
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["Authorization"], access)
+        self.assertTrue(res.data["refresh"])
