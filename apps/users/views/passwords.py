@@ -1,7 +1,7 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST, HTTP_404_NOT_FOUND
+from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
 
 from apps.users.models import User
 from permissions.users import IsSuperUser, IsOwner, IsManager, IsHR
@@ -38,6 +38,11 @@ def set_password(request, uuid):
     user = User.objects.filter(uuid=uuid).first()
     if not user:
         return Response({"message": "User not found"}, HTTP_404_NOT_FOUND)
+    caller = request.user
+    if user.is_superuser and not caller.is_superuser:
+        return Response({"message": "You are not allowed to reset this user's password"}, HTTP_403_FORBIDDEN)
+    if user.role == "OWNER" and not (caller.is_superuser or caller.role == "OWNER"):
+        return Response({"message": "You are not allowed to reset this user's password"}, HTTP_403_FORBIDDEN)
     new_password = request.data.get("new_password")
     error = _invalid_new_password(new_password)
     if error:

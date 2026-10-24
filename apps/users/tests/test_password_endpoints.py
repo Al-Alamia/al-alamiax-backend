@@ -86,3 +86,27 @@ class SetPasswordTests(BaseUserTestCase):
         self.client.force_authenticate(self.superuser)
         res = self.client.post(set_url(self.agent.uuid), {"new_password": "12345"}, format="json")
         self.assertEqual(res.status_code, 400)
+
+    def test_hr_cannot_reset_superuser(self):
+        self.client.force_authenticate(self._mk("hr2", UserTypes.HR))
+        res = self.client.post(set_url(self.superuser.uuid), {"new_password": "brandnew"}, format="json")
+        self.assertEqual(res.status_code, 403)
+        self.superuser.refresh_from_db()
+        self.assertFalse(self.superuser.check_password("brandnew"))
+
+    def test_manager_cannot_reset_owner(self):
+        owner = self._mk("own1", UserTypes.OWNER)
+        self.client.force_authenticate(self._mk("mgr2", UserTypes.MANAGER))
+        res = self.client.post(set_url(owner.uuid), {"new_password": "brandnew"}, format="json")
+        self.assertEqual(res.status_code, 403)
+
+    def test_owner_cannot_reset_superuser(self):
+        self.client.force_authenticate(self._mk("own2", UserTypes.OWNER))
+        res = self.client.post(set_url(self.superuser.uuid), {"new_password": "brandnew"}, format="json")
+        self.assertEqual(res.status_code, 403)
+
+    def test_superuser_can_reset_owner(self):
+        owner = self._mk("own3", UserTypes.OWNER)
+        self.client.force_authenticate(self.superuser)
+        res = self.client.post(set_url(owner.uuid), {"new_password": "brandnew"}, format="json")
+        self.assertEqual(res.status_code, 200)
