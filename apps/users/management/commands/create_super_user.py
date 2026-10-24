@@ -8,7 +8,7 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--username', type=str, default=None, help='Username')
         parser.add_argument('--email', type=str, default=None, help='Email')
-        parser.add_argument('--password', type=str, default=None, help='Password')
+        parser.add_argument('--password', type=str, required=True, help='Password')
 
 
     def handle(self, *args, **kwargs):
@@ -17,7 +17,7 @@ class Command(BaseCommand):
         self.stdout.write(f"Email : {kwargs.get('email')}")
         user = User.objects.create_superuser(username=kwargs.get('username'), email=kwargs.get('email'), password=kwargs.get('password'))
         self.stdout.write(self.style.SUCCESS(f"Super User Created Successfully"))
-        self.stdout.write(self.style.SUCCESS(f"User ID : {user.id}"))
+        self.stdout.write(self.style.SUCCESS(f"User ID : {user.pk}"))
         self.stdout.write(self.style.SUCCESS(f"User Username : {user.username}"))
         self.stdout.write(self.style.SUCCESS(f"User Email : {user.email}"))
         self.stdout.write(self.style.SUCCESS(f"User Role : {user.role}"))

@@ -64,6 +64,21 @@ class SetPasswordTests(BaseUserTestCase):
         )
         self.assertEqual(login.status_code, 200)
 
+    def test_reset_blacklists_target_refresh_tokens(self):
+        anon = APIClient()
+        login = anon.post(
+            "/api/users/login",
+            {"username": "agent", "password": "pass123", "unique_id": "test-device-id"},
+            format="json",
+        )
+        self.assertEqual(login.status_code, 200)
+        refresh = login.data["refresh"]
+        self.client.force_authenticate(self.superuser)
+        res = self.client.post(set_url(self.agent.uuid), {"new_password": "brandnew"}, format="json")
+        self.assertEqual(res.status_code, 200)
+        out = anon.post("/api/users/token/refresh", {"refresh": refresh}, format="json")
+        self.assertEqual(out.status_code, 401)
+
     def test_hr_and_manager_allowed(self):
         for name, role in (("hr1", UserTypes.HR), ("mgr1", UserTypes.MANAGER)):
             u = self._mk(name, role)

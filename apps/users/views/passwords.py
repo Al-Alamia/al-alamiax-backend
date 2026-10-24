@@ -1,6 +1,7 @@
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST, HTTP_403_FORBIDDEN, HTTP_404_NOT_FOUND
 
 from apps.users.models import User
@@ -49,4 +50,7 @@ def set_password(request, uuid):
         return Response({"message": error}, HTTP_400_BAD_REQUEST)
     user.set_password(new_password)
     user.save()
+    # Revoke every outstanding refresh token so existing sessions end.
+    for token in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=token)
     return Response({"message": "Password updated successfully"}, HTTP_200_OK)
