@@ -1,4 +1,4 @@
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 
 from apps.users.models import User
 from apps.users.types import UserTypes
@@ -44,3 +44,21 @@ class IsManagerPlus(BasePermission):
         user = request.user
         return bool(user and user.is_authenticated
                     and (is_hr_plus(user) or user.role == UserTypes.MANAGER))
+
+
+class _ReadByRoleWriteHR(BasePermission):
+    """Safe methods need ``read_permission``; everything else needs HR+."""
+    read_permission = IsHRPlus
+
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return self.read_permission().has_permission(request, view)
+        return IsHRPlus().has_permission(request, view)
+
+
+class ManagerReadHRWrite(_ReadByRoleWriteHR):
+    read_permission = IsManagerPlus
+
+
+class AuthenticatedReadHRWrite(_ReadByRoleWriteHR):
+    read_permission = IsAuthenticated
