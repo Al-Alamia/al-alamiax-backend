@@ -56,6 +56,7 @@ LOCAL_APPS = [
     'apps.treasury.apps.TreasuryConfig' ,
     'apps.purposes.apps.PurposesConfig' ,
     'apps.attendance.apps.AttendanceConfig' ,
+    'apps.notifications.apps.NotificationsConfig',
 ]
 
 INSTALLED_APPS = INSTALLED_APPS + THIRD_PARTY_APPS + LOCAL_APPS

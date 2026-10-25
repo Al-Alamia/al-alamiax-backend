@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import  TreasuryIncome , TreasuryOutcome , Advance , Notification
+from .models import  TreasuryIncome , TreasuryOutcome , Advance
 from utils.admin_utils import FieldSets
 # Register your models here.
 
@@ -47,29 +47,6 @@ class AdvanceAdminSite(admin.ModelAdmin):
     ]).fieldsets
 
 
-class NotificationAdminSite(admin.ModelAdmin):
-    list_display = ["creator" , "message"  ]
-    list_filter = ["creator"]
-    readonly_fields = ['uuid',"created_at","updated_at"]
-    search_fields = ["craetor__username",'message', 'for_users']  
-    fieldsets = FieldSets([
-            'Advance Fields' ,
-            'Other Fields'
-        ],[
-            [
-                'creator',
-                'message',
-                'for_users',
-                'seen_by_users',
-                'deadline',
-            ],[
-                "uuid" ,
-                "created_at",
-                "updated_at"
-            ]
-    ]).fieldsets
-
 admin.site.register(Advance , AdvanceAdminSite)
 admin.site.register(TreasuryIncome , TreasuryRecordAdminSite)
 admin.site.register(TreasuryOutcome , TreasuryRecordAdminSite)
-admin.site.register(Notification , NotificationAdminSite)

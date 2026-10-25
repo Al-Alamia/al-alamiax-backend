@@ -35,6 +35,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/users/', include('apps.users.api.urls')),
     path('api/attendance/', include('apps.attendance.urls')),
+    path('api/notifications/', include('apps.notifications.urls')),
     path('api/commission/',include('apps.commission.api.urls')),
     path('api/treasury/',include('apps.treasury.urls')),
     path('api/hr-management/',include('apps.purposes.urls')),
