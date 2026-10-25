@@ -3,7 +3,8 @@ from typing import Optional
 from rest_framework import serializers
 
 from apps.attendance.models import (AttendanceDay, AttendanceSettings, DeductionPolicy, Holiday, Punch,
-                                    Shift, ShiftAssignment, WebPunchPolicy)
+                                    Request, Shift, ShiftAssignment, WebPunchPolicy)
+from apps.attendance.permissions import request_can
 from apps.users.models import Department, User, ZKConfig
 
 DT_FORMAT = "%Y-%m-%dT%H:%M:%S"
@@ -112,3 +113,60 @@ def settings_data(s: AttendanceSettings) -> dict:
 def device_data(z: ZKConfig) -> dict:
     return {"uuid": str(z.uuid), "name": z.name, "ip": z.ip, "port": z.port,
             "last_synced_at": z.last_synced_at.strftime(DT_FORMAT) if z.last_synced_at else None}
+
+
+def _name_ref(user) -> Optional[dict]:
+    if user is None:
+        return None
+    return {"uuid": str(user.uuid), "name": user.get_full_name().strip() or user.username}
+
+
+class RequestSerializer(serializers.ModelSerializer):
+    """Context: ``viewer`` and ``today`` (for ``can``); ``request`` for absolute attachment URLs;
+    ``with_days`` adds the affected attendance days."""
+    user = UserRefSerializer(read_only=True)
+    created_by = serializers.SerializerMethodField()
+    leave_type = serializers.SerializerMethodField()
+    punch_time = serializers.DateTimeField(format=DT_FORMAT)
+    cancels = serializers.UUIDField(source="cancels_id", read_only=True, allow_null=True)
+    attachment = serializers.SerializerMethodField()
+    decided_by = serializers.SerializerMethodField()
+    decided_at = serializers.DateTimeField(format=DT_FORMAT)
+    created_at = serializers.DateTimeField(format=DT_FORMAT)
+    leave_days = serializers.SerializerMethodField()
+    can = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Request
+        fields = ["uuid", "kind", "status", "user", "created_by", "start_date", "end_date", "leave_type",
+                  "minutes", "punch_time", "cancels", "details", "attachment", "decided_by", "decided_at",
+                  "decision_note", "over_balance", "leave_days", "created_at", "can"]
+
+    def get_created_by(self, req):
+        return _name_ref(req.created_by)
+
+    def get_decided_by(self, req):
+        return _name_ref(req.decided_by)
+
+    def get_leave_type(self, req):
+        lt = req.leave_type
+        return {"uuid": str(lt.uuid), "name": lt.name, "pay_percent": lt.pay_percent} if lt else None
+
+    def get_attachment(self, req):
+        if not req.attachment:
+            return None
+        http = self.context.get("request")
+        return http.build_absolute_uri(req.attachment.url) if http else req.attachment.url
+
+    def get_leave_days(self, req):
+        return float(req.leave_days)
+
+    def get_can(self, req):
+        return request_can(self.context["viewer"], req, self.context["today"])
+
+    def to_representation(self, req):
+        data = super().to_representation(req)
+        if self.context.get("with_days"):
+            days = req.attendance_days.order_by("date")
+            data["days"] = [{"date": d.date.isoformat(), "status": d.status} for d in days]
+        return data

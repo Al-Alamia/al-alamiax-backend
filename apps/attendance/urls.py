@@ -1,6 +1,6 @@
 from django.urls import path
 
-from apps.attendance.views import config, days, punch
+from apps.attendance.views import config, days, punch, requests
 
 urlpatterns = [
     path("punch", punch.web_punch),
@@ -10,6 +10,13 @@ urlpatterns = [
     path("recalculate", days.recalculate_view),
     path("punches", punch.punches),
     path("punches/<uuid:uuid>", punch.delete_punch),
+    path("requests", requests.request_list),
+    path("requests/period", requests.period),
+    path("requests/<uuid:uuid>", requests.request_detail),
+    path("requests/<uuid:uuid>/approve", requests.approve),
+    path("requests/<uuid:uuid>/reject", requests.reject),
+    path("requests/<uuid:uuid>/cancel", requests.cancel),
+    path("requests/<uuid:uuid>/revoke", requests.revoke),
     path("shifts", config.shifts),
     path("shifts/<uuid:uuid>", config.shift_detail),
     path("shift-assignments", config.shift_assignments),
