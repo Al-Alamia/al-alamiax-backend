@@ -75,6 +75,26 @@ class LeaveTypeTests(LeaveApiBase):
         res = self.client.post(TYPES, {**TYPE_BODY, "pay_percent": 101}, format="json")
         self.assertEqual((res.status_code, res.data["type"]), (400, "validation"))
 
+    def test_invalid_type_fields(self):
+        self.authenticate_as(self.hr)
+        for key, bad in (("pay_percent", -1), ("pay_percent", True), ("pay_percent", 50.5),
+                         ("uses_balance", "yes"), ("is_active", 1), ("requires_attachment", None),
+                         ("yearly_allowance", 1.25)):
+            res = self.client.post(TYPES, {**TYPE_BODY, key: bad}, format="json")
+            self.assertEqual((res.status_code, res.data["type"]), (400, "validation"), (key, bad))
+
+    def test_manager_cannot_write_types(self):
+        self.authenticate_as(self.manager)
+        url = f"{TYPES}/{self.annual.uuid}"
+        self.assertEqual(self.client.patch(url, {"pay_percent": 1}, format="json").status_code, 403)
+        self.assertEqual(self.client.delete(url).status_code, 403)
+
+    def test_patch_duplicate_name_400(self):
+        self.authenticate_as(self.hr)
+        other = make_leave_type(name="Other")
+        res = self.client.patch(f"{TYPES}/{other.uuid}", {"name": "Annual"}, format="json")
+        self.assertEqual(res.status_code, 400)
+
     def test_duplicate_name_and_bad_allowance(self):
         self.authenticate_as(self.hr)
         self.assertEqual(self.client.post(TYPES, {**TYPE_BODY, "name": "Annual"}, format="json").status_code, 400)
@@ -112,6 +132,18 @@ class AllowanceTests(LeaveApiBase):
         self.assertEqual(self.client.delete(url).status_code, 204)
         self.assertFalse(LeaveAllowance.objects.filter(user=self.agent).exists())
 
+    def test_manager_forbidden_writes(self):
+        a = LeaveAllowance.objects.create(user=self.agent, leave_type=self.annual, year=2026, days=5)
+        self.authenticate_as(self.manager)
+        self.assertEqual(self.client.post(ALLOW, self.body(), format="json").status_code, 403)
+        self.assertEqual(self.client.patch(f"{ALLOW}/{a.uuid}", {"days": 1}, format="json").status_code, 403)
+        self.assertEqual(self.client.delete(f"{ALLOW}/{a.uuid}").status_code, 403)
+
+    def test_bad_year_filter(self):
+        self.authenticate_as(self.hr)
+        for y in ("\u00b2", "99999", "abc"):
+            self.assertEqual(self.client.get(ALLOW, {"year": y}).status_code, 400, y)
+
     def test_bad_references(self):
         self.authenticate_as(self.hr)
         self.assertEqual(self.client.post(ALLOW, self.body(user="nope"), format="json").status_code, 400)
@@ -134,6 +166,17 @@ class BalanceTests(LeaveApiBase):
         self.authenticate_as(self.hr)
         self.assertEqual(self.client.get(BAL, {"user": str(self.outsider.uuid), "year": 2025}).data["year"], 2025)
 
+    def test_default_year_follows_now(self):
+        self.authenticate_as(self.agent)
+        with mock.patch.object(leave, "_now", return_value=dt.datetime(2027, 3, 1)):
+            self.assertEqual(self.client.get(BAL).data["year"], 2027)
+
+    def test_bad_year(self):
+        self.authenticate_as(self.agent)
+        for y in ("\u00b2", "99999"):
+            res = self.client.get(BAL, {"year": y})
+            self.assertEqual((res.status_code, res.data["type"]), (400, "validation"), y)
+
     def test_bad_params(self):
         self.authenticate_as(self.hr)
         self.assertEqual(self.client.get(BAL, {"user": "nope"}).status_code, 400)
@@ -150,6 +193,12 @@ class WorkingDaysTests(LeaveApiBase):
         self.assertEqual((bad.status_code, bad.data["type"]), (400, "validation"))
         self.assertEqual(self.client.get(WD, {"start": "x", "end": "2026-10-22"}).status_code, 400)
         self.assertEqual(self.client.get(WD, {"start": "2026-10-22"}).status_code, 400)
+
+    def test_span_capped(self):
+        self.authenticate_as(self.agent)
+        self.assertEqual(self.client.get(WD, {"start": "2026-01-01", "end": "2026-12-31"}).status_code, 200)
+        res = self.client.get(WD, {"start": "2026-01-01", "end": "2027-01-02"})
+        self.assertEqual((res.status_code, res.data["type"]), (400, "validation"))
 
     def test_scope(self):
         self.authenticate_as(self.agent)

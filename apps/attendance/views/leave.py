@@ -13,11 +13,12 @@ from apps.attendance.permissions import AuthenticatedReadHRWrite, IsHRPlus, can_
 from apps.attendance.serializers import balance_data, leave_allowance_data, leave_type_data
 from apps.attendance.services import leave as svc
 from apps.attendance.views import error
-from apps.attendance.views.config import (_Invalid, _bad, _body, _invalid_body, _is_int, _is_number, _lookup,
+from apps.attendance.views.config import (_Invalid, _bad, _body, _int_in, _invalid_body, _is_int, _is_number, _lookup,
                                           _not_found, _parse_date, _uuid)
 from apps.users.models import User
 
 MAX_DAYS = Decimal("9999.9")
+MAX_SPAN_DAYS = 366
 
 
 def _now() -> datetime:
@@ -113,14 +114,20 @@ def leave_type_detail(request, uuid):
         return _bad(e.message, e.type)
     for k, v in values.items():
         setattr(t, k, v)
-    t.save()
+    try:
+        with transaction.atomic():
+            t.save()
+    except IntegrityError:
+        return _bad("A leave type with this name already exists", "duplicate")
     return Response(leave_type_data(t))
 
 
-def _year(value, field: str = "year") -> int:
-    if not _is_int(value) or not 2000 <= value <= 2100:
-        raise _Invalid(f"{field} must be an integer between 2000 and 2100")
-    return value
+def _query_year(raw: str) -> int:
+    try:
+        value = int(raw) if raw.isascii() else None
+    except ValueError:
+        value = None
+    return _int_in(value, 2000, 2100, "year")
 
 
 @api_view(["GET", "POST"])
@@ -135,9 +142,10 @@ def leave_allowances(request):
                 return _bad("Invalid user")
             qs = qs.filter(user=uid)
         if year_raw:
-            if not year_raw.isdigit():
-                return _bad("year must be an integer")
-            qs = qs.filter(year=int(year_raw))
+            try:
+                qs = qs.filter(year=_query_year(year_raw))
+            except _Invalid as e:
+                return _bad(e.message, e.type)
         return Response([leave_allowance_data(a) for a in qs])
     body = _body(request)
     if body is None:
@@ -145,7 +153,7 @@ def leave_allowances(request):
     try:
         user = _lookup(User, body.get("user"), "user")
         leave_type = _lookup(LeaveType, body.get("leave_type"), "leave_type")
-        year, days = _year(body.get("year")), _decimal(body.get("days"), "days")
+        year, days = _int_in(body.get("year"), 2000, 2100, "year"), _decimal(body.get("days"), "days")
         with transaction.atomic():
             a = LeaveAllowance.objects.create(user=user, leave_type=leave_type, year=year, days=days)
     except _Invalid as e:
@@ -199,13 +207,11 @@ def leave_balances(request):
     try:
         target = _scoped_target(request)
         raw = request.query_params.get("year")
-        if raw and not raw.isdigit():
-            raise _Invalid("year must be an integer")
+        year = _query_year(raw) if raw else _now().year
     except _Invalid as e:
         return _bad(e.message, e.type)
     except PermissionError:
         return _forbidden()
-    year = int(raw) if raw else _now().year
     return Response({"year": year, "results": [balance_data(r) for r in svc.balances(target, year)]})
 
 
@@ -219,6 +225,8 @@ def leave_working_days(request):
             raise _Invalid("start and end must be YYYY-MM-DD")
         if end < start:
             raise _Invalid("end must not be before start")
+        if (end - start).days >= MAX_SPAN_DAYS:
+            raise _Invalid(f"The range must not exceed {MAX_SPAN_DAYS} days")
     except _Invalid as e:
         return _bad(e.message, e.type)
     except PermissionError:
