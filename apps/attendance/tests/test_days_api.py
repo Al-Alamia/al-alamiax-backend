@@ -107,7 +107,7 @@ class DailyTests(FrozenNowMixin, BaseUserTestCase):
         self.assertEqual(len(r.data["results"]), 3)
         c = r.data["counts"]
         self.assertEqual((c["NONE"], c["LATE"], c["PRESENT"], c["ABSENT"], c["NO_SHIFT"]), (1, 1, 1, 0, 0))
-        self.assertEqual(len(c), 8)
+        self.assertEqual(len(c), 10)
         none = [x for x in r.data["results"] if x["day"] is None]
         self.assertEqual(none[0]["user"]["username"], "other")
 

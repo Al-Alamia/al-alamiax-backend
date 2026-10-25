@@ -17,7 +17,6 @@ from .models import (
     LeadUpdate ,
     Profile ,
     UpdateHistory , 
-    Request , 
     FingerPrintID , 
     ZKConfig ,
     ReportRecord
@@ -61,11 +60,11 @@ class UserResource(resources.ModelResource):
         model = User
         import_id_fields = ('username',)
         fields = (
-            'username', 'password','profile__phone','annual_count', 'is_active', "first_name", "last_name", 'project_name', 'role', 'title', 'department_name', 'crm_username', 
+            'username', 'password','profile__phone', 'is_active', "first_name", "last_name", 'project_name', 'role', 'title', 'department_name', 'crm_username', 
             'basic_salary', 'set_global_commission_rules'
         )
         export_order = (
-            'username', 'password','profile__phone','annual_count', 'is_active', "first_name", "last_name", 'project_name', 'role', 'title', 'department_name', 'crm_username', 
+            'username', 'password','profile__phone', 'is_active', "first_name", "last_name", 'project_name', 'role', 'title', 'department_name', 'crm_username', 
             'basic_salary', 'set_global_commission_rules'
         )
         
@@ -93,7 +92,7 @@ class UserAdminSite(ImportExportModelAdmin, UserAdmin):
     add_form = UserAdminCreationForm
     add_fieldsets = ((None, {"fields": ("username", "password1", "password2")}),)
     ordering = ("username",)
-    list_display = ("username","crm_username",'role',"department","project","annual_count","fp_id","is_active","is_staff","is_superuser")
+    list_display = ("username","crm_username",'role',"department","project","fp_id","is_active","is_staff","is_superuser")
     list_filter = ("project","department","role")
     readonly_fields = ['uuid',"created_at","updated_at"]
     search_fields = ['username' , 'uuid' , 'first_name',"fp_id"]  
@@ -118,7 +117,6 @@ class UserAdminSite(ImportExportModelAdmin, UserAdmin):
                 "title",
                 "department" ,
                 "crm_username" ,
-                "annual_count",
                 "fp_id",
             ],
             [
@@ -236,31 +234,6 @@ class UpdateHistoryAdminSite(ImportExportModelAdmin):
     ]).fieldsets
 
 
-class RequestAdminSite(ImportExportModelAdmin):
-    list_display = ["user" ,"type","status", "department","date"]
-    list_filter = ["user" ,  "department","status" , "type"]
-    readonly_fields = ['uuid',"created_at","updated_at" , "department" ]
-    search_fields = ['user__username','details', 'department__name' , "uuid"]  
-    fieldsets = FieldSets([
-            'UpdateHistory Fields' ,
-            'Other Fields'
-        ],[
-            [
-                'user',
-                'type',
-                'status',
-                'details',
-                'note',
-                'date',
-            ],[
-                "uuid" ,
-                "created_at",
-                "updated_at" ,
-                "department",
-            ]
-    ]).fieldsets
-
-
 class FingerPrintIDAdminSite(ImportExportModelAdmin):
     list_display = ["user","name" ,"unique_id"]
     list_filter = ["user" ]
@@ -348,7 +321,6 @@ class LeadUpdateAdmin(admin.ModelAdmin):
         return False
 
 
-admin.site.register(Request,RequestAdminSite)
 admin.site.register(UpdateHistory , UpdateHistoryAdminSite)
 admin.site.register(FingerPrintID , FingerPrintIDAdminSite)
 admin.site.register(ZKConfig , ZKConfigAdminSite)

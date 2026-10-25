@@ -6,7 +6,10 @@ from .models import (
     DeductionPolicy,
     DeductionTier,
     Holiday,
+    LeaveAllowance,
+    LeaveType,
     Punch,
+    Request,
     Shift,
     ShiftAssignment,
     WebPunchPolicy,
@@ -65,3 +68,23 @@ class AttendanceDayAdmin(admin.ModelAdmin):
 @admin.register(WebPunchPolicy)
 class WebPunchPolicyAdmin(admin.ModelAdmin):
     list_display = ["department", "require_trusted_device", "require_office_ip"]
+
+
+@admin.register(LeaveType)
+class LeaveTypeAdmin(admin.ModelAdmin):
+    list_display = ["name", "pay_percent", "uses_balance", "yearly_allowance", "is_active"]
+    search_fields = ["name"]
+
+
+@admin.register(LeaveAllowance)
+class LeaveAllowanceAdmin(admin.ModelAdmin):
+    list_display = ["user", "leave_type", "year", "days"]
+    list_filter = ["leave_type", "year"]
+    search_fields = ["user__username"]
+
+
+@admin.register(Request)
+class RequestAdmin(admin.ModelAdmin):
+    list_display = ["user", "kind", "status", "start_date", "end_date"]
+    list_filter = ["kind", "status"]
+    search_fields = ["user__username"]

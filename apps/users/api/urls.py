@@ -8,7 +8,6 @@ from apps.users.views import (
     UsersAPI ,
     LeadAPI ,
     ProfileAPI ,
-    RequestAPI ,
     FingerPrintIDAPI,
      )
 from apps.users.views.lead_pipeline import LeadViewSet
@@ -42,7 +41,6 @@ urlpatterns = [
     path('leads/<uuid:uuid>/unhide', LeadViewSet.as_view({'post': 'unhide'})),
     path('lead',LeadAPI.as_view()) ,
     path('profile',ProfileAPI.as_view()) ,
-    path('request',RequestAPI.as_view()) ,
     path('device-access',FingerPrintIDAPI.as_view()) ,
     path('upload-sheet',upload_sheet) ,
     path('save-upload',save_upload) ,

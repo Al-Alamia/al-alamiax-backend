@@ -7,13 +7,6 @@ class UserTypes (models.TextChoices):
     HR = ('HR','HR')
 
 
-class RequestTypes (models.TextChoices):
-    GLOBAL = ("GLOBAL", "Global")
-    ANNUAL = ("DEPARTURE", "Departure")
-    VACATION = ('VACATION','Vacation')
-    LATE = ('LATE','Late')
-
-
 class RequestStatuses (models.TextChoices):
     PENDING = ("PENDING", "Pending")
     ACCEPTED = ("ACCEPTED", "Accepted")

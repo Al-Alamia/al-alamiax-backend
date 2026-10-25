@@ -7,7 +7,7 @@ from .managers import (
         ManagerObjects ,
         OwnerObjects
     )
-from .types import UserTypes , RequestTypes , RequestStatuses , DepartmentCodes , StockMarkets , LeadStatuses , CallStatuses , AssignmentKinds , LeadUpdateTypes
+from .types import UserTypes , DepartmentCodes , StockMarkets , LeadStatuses , CallStatuses , AssignmentKinds , LeadUpdateTypes
 from utils.models_utils import image_upload_path , validate_lead_number , validate_role , validate_user_number
 from django.db.models.signals import pre_save , post_save , post_delete
 from core.models import BaseModel
@@ -53,7 +53,6 @@ class User(AbstractUser , BaseModel):
     title = models.CharField(max_length=100 , verbose_name="Title" , default='Agent')
     department = models.ForeignKey( Department,verbose_name="Department", on_delete=models.SET_NULL, null=True)
     crm_username = models.CharField(max_length=200 , verbose_name="CRM Username" , blank=True  )
-    annual_count = models.IntegerField(verbose_name="Annual Count", default= 0 )
     fp_id = models.CharField(verbose_name="Figner Print ID",max_length=200 , unique=False,blank=True)
     
     def __str__(self):
@@ -155,19 +154,6 @@ class UpdateHistory(models.Model):
         return f"{self.model_name} - {self.model_uuid} - {self.updated_at.date()}"
 
 
-class Request(BaseModel):
-    user = models.ForeignKey(User,verbose_name="User" , on_delete=models.SET_NULL , null=True )
-    details = models.TextField(verbose_name="Details", max_length=300)
-    note = models.TextField(verbose_name="Note", max_length=100 , blank=True , null=True)
-    type = models.CharField(verbose_name="Request Type", max_length=50, choices=RequestTypes.choices ,default=RequestTypes.GLOBAL)
-    department = models.ForeignKey(Department,verbose_name="Department" , on_delete=models.SET_NULL , null=True)
-    status = models.CharField(verbose_name="Request Status", max_length=50, choices=RequestStatuses.choices ,default=RequestStatuses.PENDING)
-    date = models.DateField(verbose_name="Date of Request", null=True )
-    
-    def save(self,*args,**kwargs):
-        if self.user :
-            self.department = self.user.department
-        return super().save(*args,**kwargs)
 
 class ZKConfig(BaseModel):
     ip = models.CharField(verbose_name="IP Address",max_length=20,unique=True )
@@ -286,7 +272,6 @@ pre_save.connect(create_update_history, sender=FingerPrintID)
 pre_save.connect(create_update_history, sender=User)
 pre_save.connect(create_update_history, sender=Profile)
 pre_save.connect(create_update_history, sender=Lead)
-pre_save.connect(create_update_history, sender=Request)
 post_save.connect(fp_signal, sender=User)
 post_delete.connect(fp_delete,sender=User)
 

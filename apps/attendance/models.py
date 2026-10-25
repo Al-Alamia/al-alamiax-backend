@@ -4,7 +4,7 @@ from django.db.models import Q
 
 from core.models import BaseModel
 from apps.users.models import Department, User, ZKConfig
-from .types import DayStatus, PunchSource, TierKind
+from .types import DayStatus, PunchSource, RequestKind, RequestStatus, TierKind
 
 
 class AttendanceSettings(models.Model):
@@ -168,6 +168,11 @@ class AttendanceDay(BaseModel):
     grace_minutes = models.PositiveIntegerField(default=0)
     is_working_day = models.BooleanField(default=True)
     evaluated_at = models.DateTimeField()
+    # approved request (leave or excuse) that affected this day
+    request = models.ForeignKey("attendance.Request", on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name="attendance_days")
+    excused_late_minutes = models.PositiveIntegerField(default=0)
+    excused_early_minutes = models.PositiveIntegerField(default=0)
 
     class Meta:
         constraints = [
@@ -181,3 +186,67 @@ class WebPunchPolicy(BaseModel):
     require_trusted_device = models.BooleanField(default=False)
     require_office_ip = models.BooleanField(default=False)
     allowed_ips = models.JSONField(default=list, blank=True)
+
+
+class LeaveType(BaseModel):
+    name = models.CharField(max_length=100, unique=True)
+    pay_percent = models.PositiveSmallIntegerField(
+        default=100, validators=[MinValueValidator(0), MaxValueValidator(100)])
+    uses_balance = models.BooleanField(default=False)
+    yearly_allowance = models.DecimalField(
+        max_digits=5, decimal_places=1, default=0, validators=[MinValueValidator(0)])
+    requires_attachment = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+
+class LeaveAllowance(BaseModel):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="leave_allowances")
+    leave_type = models.ForeignKey(LeaveType, on_delete=models.CASCADE, related_name="allowances")
+    year = models.PositiveSmallIntegerField()
+    days = models.DecimalField(max_digits=5, decimal_places=1, validators=[MinValueValidator(0)])
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "leave_type", "year"],
+                                    name="leaveallowance_unique_user_type_year"),
+        ]
+
+
+class Request(BaseModel):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="attendance_requests")
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="requests_created")
+    kind = models.CharField(max_length=20, choices=RequestKind.choices)
+    status = models.CharField(max_length=20, choices=RequestStatus.choices,
+                              default=RequestStatus.PENDING)
+    start_date = models.DateField()
+    end_date = models.DateField()
+    leave_type = models.ForeignKey(LeaveType, on_delete=models.PROTECT, null=True, blank=True,
+                                   related_name="requests")
+    minutes = models.PositiveIntegerField(null=True, blank=True)
+    punch_time = models.DateTimeField(null=True, blank=True)
+    cancels = models.ForeignKey("self", on_delete=models.PROTECT, null=True, blank=True,
+                                related_name="cancellations")
+    details = models.TextField(max_length=500, blank=True)
+    attachment = models.FileField(upload_to="attendance-requests/", null=True, blank=True)
+    decided_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name="requests_decided")
+    decided_at = models.DateTimeField(null=True, blank=True)
+    decision_note = models.TextField(max_length=500, blank=True)
+    over_balance = models.BooleanField(default=False)
+    leave_days = models.DecimalField(max_digits=5, decimal_places=1, default=0)
+    punch = models.OneToOneField(Punch, on_delete=models.SET_NULL, null=True, blank=True,
+                                 related_name="request")
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["user", "start_date"], name="request_user_start_idx"),
+            models.Index(fields=["status"], name="request_status_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.user} {self.kind} {self.start_date}"

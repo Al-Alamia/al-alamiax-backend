@@ -9,7 +9,6 @@ from ..models import (
     Project , 
     Profile,
     Lead,
-    Request ,
     UpdateHistory , 
     FingerPrintID
     )
@@ -96,7 +95,6 @@ class UserSerializer(ModelSerializer):
             "password",
             "profile",
             "crm_username",
-            "annual_count",
             "fp_id",
         ]
         extra_kwargs = {"password": {"write_only": True, "required": False}}
@@ -161,30 +159,6 @@ class FingerPrintIDSerializer(ModelSerializer):
         }
 
 
-
-
-class RequestSerializer(ModelSerializer):
-    user = UserSerializer(read_only=True)
-    date = MultiDateFormatField()
-    class Meta:
-        model = Request
-        fields = [
-            "uuid",
-            "user",
-            "details",
-            "type",
-            "note",
-            "department",
-            "status",
-            "date",
-            "created_at",
-            "updated_at",
-
-        ]
-        foreign_models = {
-            "department": ForeignField("department",Department,'uuid') ,
-            "user": ForeignField("user",User,'uuid') ,
-        }
 
 
 

@@ -6,7 +6,6 @@ from apps.users.models import (
     Department , 
     Profile,
     Lead,
-    Request ,
     FingerPrintID ,
     )
 from apps.users.serializers import (
@@ -15,7 +14,6 @@ from apps.users.serializers import (
     UserSerializer , 
     ProfileSerializer ,
     LeadSerializer ,
-    RequestSerializer ,
     FingerPrintIDSerializer ,
     )
 from .project_department_views import ProjectViewSet, DepartmentViewSet
@@ -32,10 +30,10 @@ class UsersAPI(APIViewSet):
     model = User
     model_serializer= UserSerializer
     order_by = ('-is_active','role','username')
-    search_filters = ["uuid",'username','project' ,"department","annual_count","role","is_active","is_superuser","crm_username"]
-    creating_filters = ["username","password","is_active","annual_count","role","is_staff","title","project","department","crm_username"]
+    search_filters = ["uuid",'username','project' ,"department","role","is_active","is_superuser","crm_username"]
+    creating_filters = ["username","password","is_active","role","is_staff","title","project","department","crm_username"]
     requiered_fields = ['username',"password"]
-    updating_filters = ["username","is_active","annual_count","role","is_staff","title","project","department","crm_username"]
+    updating_filters = ["username","is_active","role","is_staff","title","project","department","crm_username"]
     unique_field:str = 'uuid'
     permissions_config = {
         "GET": [IsSuperUser | IsOwner | IsManager | IsHR],
@@ -71,22 +69,6 @@ class LeadAPI(APIViewSet):
     requiered_fields = ["user","phone","date","project"]
     unique_field:str = 'uuid'
 
-
-class RequestAPI(APIViewSet):
-    # permission_classes = [IsAuthenticated]
-    pagination_class = DefaultPagination
-    model = Request
-    model_serializer= RequestSerializer
-    order_by = ('-created_at',)
-    search_filters = ["uuid","user","details","type","status","date"]
-    creating_filters = ["user","details","type","date"]
-    requiered_fields =  ["user","details","type","date"]
-    updating_filters = ["status","details","type","date"]
-    unique_field:str = 'uuid'
-    permissions_config = {
-        "PUT": [IsSuperUser | IsOwner | IsManager | IsHR ],
-        "DELETE": [IsSuperUser | IsOwner | IsManager | IsHR],
-    }
 
 
 
