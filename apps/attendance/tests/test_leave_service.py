@@ -1,14 +1,16 @@
 import datetime as dt
 from decimal import Decimal
 
-from apps.attendance.models import Holiday, LeaveAllowance
+from apps.attendance.models import Holiday, LeaveAllowance, Request
 from apps.attendance.services import leave
 from apps.attendance.services.evaluate import recalculate
 from apps.attendance.tests.factories import (
     assign, make_leave_type, make_policy, make_request, make_shift,
 )
 from apps.attendance.types import RequestKind, RequestStatus
+from apps.users.models import User
 from apps.users.tests.base import BaseUserTestCase
+from apps.users.types import UserTypes
 
 D = dt.date
 NOW = dt.datetime(2026, 10, 20, 12)
@@ -58,13 +60,38 @@ class LeaveServiceTests(BaseUserTestCase):
     def test_used_and_remaining(self):
         lt = self.lt()
         self.leave_req(lt, D(2026, 10, 5), D(2026, 10, 7))
-        self.leave_req(lt, D(2026, 10, 12), D(2026, 10, 13), status=RequestStatus.PENDING)
+        # Thu-Sun: 2 working days (Fri/Sat are weekend), 4 calendar days
+        pend = self.leave_req(lt, D(2026, 10, 8), D(2026, 10, 11), status=RequestStatus.PENDING)
         self.leave_req(lt, D(2026, 10, 19), D(2026, 10, 20), status=RequestStatus.REVOKED)
+        # non-approved requests carry leave_days too, so `used` must filter on status
+        Request.objects.exclude(status=RequestStatus.APPROVED).update(leave_days=2)
         recalculate(D(2026, 10, 5), D(2026, 10, 7), [self.agent], NOW)
+        # pending in another year is not counted
+        self.leave_req(lt, D(2027, 1, 4), D(2027, 1, 5), status=RequestStatus.PENDING)
         self.assertEqual(leave.used(self.agent, lt, 2026), Decimal("3"))
         self.assertEqual(leave.pending(self.agent, lt, 2026), Decimal("2"))
         self.assertEqual(leave.remaining(self.agent, lt, 2026), Decimal("18"))
         self.assertEqual(leave.used(self.agent, lt, 2025), Decimal("0"))
+        self.assertEqual(leave.pending(self.agent, lt, 2026, exclude=pend), Decimal("0"))
+
+    def test_scoped_to_user_and_leave_type(self):
+        lt = self.lt()
+        other_lt = self.lt()
+        other_user = User.objects.create_user(
+            username="other", password="pass123", email="other@test.com",
+            role=UserTypes.AGENT, project=self.project, department=self.department)
+        other_user.date_joined = dt.datetime(2020, 1, 1)
+        other_user.save()
+        self.leave_req(lt, D(2026, 10, 5), D(2026, 10, 7))
+        recalculate(D(2026, 10, 5), D(2026, 10, 7), [self.agent], NOW)
+        for user, t in ((self.agent, other_lt), (other_user, lt), (other_user, other_lt)):
+            make_request(user, RequestKind.LEAVE, D(2026, 10, 12), D(2026, 10, 13),
+                         leave_type=t, leave_days=2)
+            make_request(user, RequestKind.LEAVE, D(2026, 10, 14), D(2026, 10, 15),
+                         status=RequestStatus.PENDING, leave_type=t)
+        self.assertEqual(leave.used(self.agent, lt, 2026), Decimal("3"))
+        self.assertEqual(leave.pending(self.agent, lt, 2026), Decimal("0"))
+        self.assertEqual(leave.remaining(self.agent, lt, 2026), Decimal("18"))
 
     def test_exclude_leaves_request_out(self):
         lt = self.lt()
