@@ -1,8 +1,10 @@
 import datetime
 import itertools
 
-from apps.attendance.models import DeductionPolicy, DeductionTier, Punch, Shift, ShiftAssignment
-from apps.attendance.types import PunchSource, TierKind
+from apps.attendance.models import (
+    DeductionPolicy, DeductionTier, LeaveType, Punch, Request, Shift, ShiftAssignment,
+)
+from apps.attendance.types import PunchSource, RequestStatus, TierKind
 
 _counter = itertools.count(1)
 
@@ -36,3 +38,14 @@ def make_policy(department=None, allowance=0, absence=1.0, late=(), early=()) ->
         for minutes, days in tiers:
             DeductionTier.objects.create(policy=policy, kind=kind, min_minutes=minutes, deduction_days=days)
     return policy
+
+
+def make_leave_type(**kw) -> LeaveType:
+    kw.setdefault("name", f"Leave {next(_counter)}")
+    kw.setdefault("pay_percent", 100)
+    return LeaveType.objects.create(**kw)
+
+
+def make_request(user, kind, start, end=None, status=RequestStatus.APPROVED, **kw) -> Request:
+    return Request.objects.create(user=user, kind=kind, start_date=start, end_date=end or start,
+                                  status=status, **kw)

@@ -4,8 +4,8 @@ from typing import Optional
 from django.db import transaction
 from django.db.models import Q
 
-from apps.attendance.models import AttendanceDay, AttendanceSettings, Holiday, Punch
-from apps.attendance.types import DayStatus, TierKind
+from apps.attendance.models import AttendanceDay, AttendanceSettings, Holiday, Punch, Request
+from apps.attendance.types import DayStatus, RequestKind, RequestStatus, TierKind
 
 from .periods import period_key_for, period_range
 from .shifts import is_closed, owner_day, policy_for, resolve_shift, shift_window, windows_for
@@ -27,6 +27,18 @@ def _deduction(policy, late_minutes: int, early_minutes: int, late_excused: bool
     return min(late_part + early_part, policy.absence_days)
 
 
+def _approved_requests(user, d: date) -> dict:
+    """Approved LEAVE / LATE_EXCUSE / EARLY_EXCUSE requests of ``user`` covering ``d``, keyed by kind."""
+    found = {}
+    qs = (Request.objects.filter(user=user, status=RequestStatus.APPROVED, start_date__lte=d,
+                                 end_date__gte=d,
+                                 kind__in=[RequestKind.LEAVE, RequestKind.LATE_EXCUSE, RequestKind.EARLY_EXCUSE])
+          .select_related("leave_type").order_by("created_at"))
+    for req in qs:
+        found[req.kind] = req
+    return found
+
+
 def evaluate_day(user, d: date, now: Optional[datetime] = None) -> Optional[AttendanceDay]:
     """Idempotently (re)compute the AttendanceDay of ``user`` on ``d``.
 
@@ -36,7 +48,8 @@ def evaluate_day(user, d: date, now: Optional[datetime] = None) -> Optional[Atte
     now = now or datetime.now()
     fields = dict(status=DayStatus.NO_SHIFT, first_in=None, last_out=None, worked_minutes=0,
                   late_minutes=0, early_leave_minutes=0, deduction_days=0.0,
-                  late_excused_by_allowance=False, shift=None, shift_name="", expected_start=None,
+                  late_excused_by_allowance=False, request=None, excused_late_minutes=0,
+                  excused_early_minutes=0, shift=None, shift_name="", expected_start=None,
                   expected_end=None, grace_minutes=0, is_working_day=False, evaluated_at=now)
 
     def save():
@@ -77,6 +90,12 @@ def evaluate_day(user, d: date, now: Optional[datetime] = None) -> Optional[Atte
 
     fields["is_working_day"] = True
     policy = policy_for(user)
+    requests = _approved_requests(user, d)
+    leave = requests.get(RequestKind.LEAVE)
+    if leave is not None:
+        fields.update(status=DayStatus.LEAVE, request=leave,
+                      deduction_days=(1 - leave.leave_type.pay_percent / 100) * policy.absence_days)
+        return save()
     if first_in is None:
         if not closed:
             AttendanceDay.objects.filter(user=user, date=d).delete()
@@ -86,11 +105,20 @@ def evaluate_day(user, d: date, now: Optional[datetime] = None) -> Optional[Atte
 
     late = max(0, _minutes(first_in - window.expected_start) - shift.grace_minutes)
     early = max(0, _minutes(window.expected_end - last_out)) if last_out else 0
-    status = DayStatus.LATE if late > 0 else DayStatus.PRESENT
+    late_req = requests.get(RequestKind.LATE_EXCUSE)
+    early_req = requests.get(RequestKind.EARLY_EXCUSE)
+    excused_late = min(late_req.minutes or 0, late) if late_req else 0
+    excused_early = min(early_req.minutes or 0, early) if early_req else 0
+    left_late, left_early = late - excused_late, early - excused_early
+    status = DayStatus.LATE if left_late > 0 else DayStatus.PRESENT
+    if (late > 0 or early > 0) and left_late == 0 and left_early == 0:
+        status = DayStatus.EXCUSED
     if last_out is None and closed:
         status = DayStatus.INCOMPLETE
+    covering = late_req if excused_late > 0 else early_req if excused_early > 0 else None
     fields.update(status=status, late_minutes=late, early_leave_minutes=early,
-                  deduction_days=_deduction(policy, late, early, False))
+                  excused_late_minutes=excused_late, excused_early_minutes=excused_early,
+                  request=covering, deduction_days=_deduction(policy, left_late, left_early, False))
     return save()
 
 
@@ -101,11 +129,13 @@ def apply_allowance(user, period_key: str) -> None:
     days = AttendanceDay.objects.filter(user=user, date__range=(start, end)).order_by("date")
     remaining = policy.monthly_late_allowance
     for day in days:
-        late_day = day.late_minutes > 0 and day.status in (DayStatus.LATE, DayStatus.INCOMPLETE)
+        left_late = day.late_minutes - day.excused_late_minutes
+        left_early = day.early_leave_minutes - day.excused_early_minutes
+        late_day = left_late > 0 and day.status in (DayStatus.LATE, DayStatus.INCOMPLETE)
         excused = late_day and remaining > 0
         if excused:
             remaining -= 1
-        deduction = (_deduction(policy, day.late_minutes, day.early_leave_minutes, excused)
+        deduction = (_deduction(policy, left_late, left_early, excused)
                      if day.status in (DayStatus.PRESENT, DayStatus.LATE, DayStatus.INCOMPLETE)
                      else day.deduction_days)
         if excused != day.late_excused_by_allowance or deduction != day.deduction_days:
@@ -127,6 +157,7 @@ def evaluate_and_allow(user, d: date, now: Optional[datetime] = None) -> Optiona
 def recalculate(start: date, end: date, users, now: Optional[datetime] = None) -> int:
     """Re-evaluate every user/date in [start, end]; returns the number of rows produced."""
     now = now or datetime.now()
+    users = list(users)
     start_day = AttendanceSettings.get().period_start_day
     touched = 0
     periods = set()
@@ -139,4 +170,17 @@ def recalculate(start: date, end: date, users, now: Optional[datetime] = None) -
             d += timedelta(days=1)
     for user, key in periods:
         apply_allowance(user, key)
+    _refresh_leave_days(start, end, users)
     return touched
+
+
+def _refresh_leave_days(start: date, end: date, users) -> None:
+    """Set ``leave_days`` of approved leaves touching [start, end] to their LEAVE day count."""
+    leaves = Request.objects.filter(user__in=users, kind=RequestKind.LEAVE,
+                                    status=RequestStatus.APPROVED, start_date__lte=end,
+                                    end_date__gte=start)
+    for req in leaves:
+        count = req.attendance_days.filter(status=DayStatus.LEAVE).count()
+        if req.leave_days != count:
+            req.leave_days = count
+            req.save(update_fields=["leave_days", "updated_at"])

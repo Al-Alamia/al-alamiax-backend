@@ -28,13 +28,14 @@ class AttendanceDaySerializer(serializers.ModelSerializer):
     expected_start = serializers.DateTimeField(format=DT_FORMAT)
     expected_end = serializers.DateTimeField(format=DT_FORMAT)
     evaluated_at = serializers.DateTimeField(format=DT_FORMAT)
+    request = serializers.UUIDField(source="request_id", read_only=True, allow_null=True)
 
     class Meta:
         model = AttendanceDay
         fields = ["uuid", "user", "date", "status", "first_in", "last_out", "worked_minutes",
                   "late_minutes", "early_leave_minutes", "deduction_days", "late_excused_by_allowance",
                   "shift_name", "expected_start", "expected_end", "grace_minutes", "is_working_day",
-                  "evaluated_at"]
+                  "evaluated_at", "excused_late_minutes", "excused_early_minutes", "request"]
 
 
 class PunchSerializer(serializers.ModelSerializer):
