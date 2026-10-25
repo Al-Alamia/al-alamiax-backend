@@ -1,8 +1,9 @@
 from django.urls import path
 
-from . import views
+from . import stream, views
 
 urlpatterns = [
+    path("stream", stream.notification_stream, name="notifications-stream"),
     path("inbox/", views.inbox, name="notifications-inbox"),
     path("unread-count/", views.unread_count, name="notifications-unread-count"),
     path("read/", views.read, name="notifications-read"),
