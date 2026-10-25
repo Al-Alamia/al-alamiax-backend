@@ -18,6 +18,7 @@ from apps.attendance.services.requests import RequestError
 from apps.attendance.types import RequestKind, RequestStatus
 from apps.attendance.views import error
 from apps.users.models import User
+from apps.users.types import UserTypes
 from apps.users.views.pagination import DefaultPagination
 
 PARSERS = [MultiPartParser, FormParser, JSONParser]
@@ -101,9 +102,12 @@ def _parse_data(body) -> dict:
             raise _Invalid("'minutes' must be a whole number.")
     if (v := _present(body, "punch_time")) is not None:
         try:
-            out["punch_time"] = datetime.fromisoformat(str(v)).replace(tzinfo=None)
+            punch_time = datetime.fromisoformat(str(v))
         except ValueError:
             raise _Invalid("'punch_time' must be an ISO datetime.")
+        if punch_time.tzinfo is not None:
+            raise _Invalid("'punch_time' must not include a timezone offset.")
+        out["punch_time"] = punch_time
     if body.get("details") is not None:
         out["details"] = str(body["details"])
     return out
@@ -126,7 +130,10 @@ def _list_queryset(viewer, params):
     elif scope == "approvals":
         qs = qs.filter(status=RequestStatus.PENDING, user__in=scoped_users(viewer))
     elif not is_hr_plus(viewer):
-        qs = qs.filter(Q(user__in=scoped_users(viewer)) | Q(user=viewer))
+        visible = Q(user=viewer)
+        if viewer.role == UserTypes.MANAGER and viewer.department_id is not None:
+            visible |= Q(user__department_id=viewer.department_id)
+        qs = qs.filter(visible)
     if v := params.get("user"):
         qs = qs.filter(user__uuid=_uuid(v)) if _uuid(v) else qs.none()
     if v := params.get("kind"):

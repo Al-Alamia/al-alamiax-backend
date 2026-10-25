@@ -1,7 +1,10 @@
 import datetime as dt
+import shutil
+import tempfile
 from unittest import mock
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 
 from apps.attendance.models import AttendanceDay
 from apps.attendance.services import requests as svc
@@ -19,6 +22,11 @@ URL = "/api/attendance/requests"
 class RequestsApiBase(BaseUserTestCase):
     def setUp(self):
         super().setUp()
+        media = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, media, ignore_errors=True)
+        override = override_settings(MEDIA_ROOT=media)
+        override.enable()
+        self.addCleanup(override.disable)
         patcher = mock.patch.object(svc, "_now", return_value=NOW)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -67,6 +75,25 @@ class ListTests(RequestsApiBase):
         self.assertEqual(self.uuids(res), {str(theirs.uuid)})
         self.assertEqual(res.data["count"], 1)
 
+    def test_agent_user_filter_for_other_returns_nothing(self):
+        other = self.pending(self.outsider)
+        self.authenticate_as(self.agent)
+        res = self.client.get(URL, {"user": str(self.outsider.uuid)})
+        self.assertEqual(res.data["count"], 0)
+        self.assertNotIn(str(other.uuid), self.uuids(res))
+
+    def test_manager_list_excludes_other_departments(self):
+        mine = self.pending(self.agent)
+        self.pending(self.outsider)
+        self.authenticate_as(self.manager)
+        self.assertEqual(self.uuids(self.client.get(URL)), {str(mine.uuid)})
+
+    def test_manager_list_includes_deactivated_member(self):
+        old = self.pending(self.agent)
+        User.objects.filter(pk=self.agent.pk).update(is_active=False)
+        self.authenticate_as(self.manager)
+        self.assertEqual(self.uuids(self.client.get(URL)), {str(old.uuid)})
+
     def test_hr_lists_all_with_filters(self):
         a = make_request(self.agent, K.LEAVE, D(2026, 11, 2), status=S.APPROVED, leave_type=self.annual)
         b = self.pending(self.outsider, K.GENERAL, D(2026, 12, 1))
@@ -93,7 +120,8 @@ class SubmitTests(RequestsApiBase):
         res = self.post_leave(attachment=f)
         self.assertEqual(res.status_code, 201, res.data)
         self.assertTrue(res.data["attachment"].startswith("http"))
-        self.assertTrue(res.data["attachment"].endswith(".pdf") or ".pdf" in res.data["attachment"])
+        self.assertIn("attendance-requests/", res.data["attachment"])
+        self.assertTrue(res.data["attachment"].endswith(".pdf"))
         self.assertEqual(res.data["leave_type"]["name"], "Annual")
         self.assertEqual(res.data["days"], [])
         self.assertTrue(res.data["can"]["edit"])
@@ -127,6 +155,12 @@ class SubmitTests(RequestsApiBase):
         self.assertEqual(res.status_code, 201, res.data)
         self.assertEqual(res.data["user"]["uuid"], str(self.agent.uuid))
         self.assertEqual(res.data["created_by"]["uuid"], str(self.manager.uuid))
+
+    def test_submit_tz_aware_punch_time_400(self):
+        self.authenticate_as(self.agent)
+        res = self.client.post(URL, {"kind": "MISSED_PUNCH", "start_date": "2026-10-20",
+                                     "punch_time": "2026-10-20T09:00:00+02:00"}, format="json")
+        self.assertEqual((res.status_code, res.data["type"]), (400, "validation"))
 
     def test_submit_bad_input_400(self):
         self.authenticate_as(self.agent)
@@ -182,6 +216,12 @@ class DetailAndActionTests(RequestsApiBase):
         self.assertFalse(res.data["can"]["approve"])
         self.assertEqual(set(res.data["can"]), {"edit", "cancel", "request_cancellation", "approve",
                                                 "reject", "revoke"})
+
+    def test_manager_approve_out_of_department_404(self):
+        req = self.pending(self.outsider)
+        self.authenticate_as(self.manager)
+        res = self.client.post(f"{URL}/{req.uuid}/approve")
+        self.assertEqual((res.status_code, res.data["type"]), (404, "not_found"))
 
     def test_approve_forbidden_for_agent_own(self):
         req = self.pending(self.agent)
