@@ -1,14 +1,15 @@
 from datetime import date, datetime, time, timedelta
 from io import StringIO
+from tempfile import TemporaryDirectory
 
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import override_settings
 
-from apps.attendance.models import (AttendanceDay, DeductionPolicy, DeductionTier, Holiday, Punch,
-                                    Shift, ShiftAssignment)
+from apps.attendance.models import (AttendanceDay, DeductionPolicy, DeductionTier, Holiday, LeaveType, Punch,
+                                    Request, Shift, ShiftAssignment)
 from apps.attendance.services.shifts import resolve_shift, shift_window
-from apps.attendance.types import DayStatus, PunchSource
+from apps.attendance.types import DayStatus, PunchSource, RequestKind, RequestStatus
 from apps.users.models import Department, User, ZKConfig
 from apps.users.tests.base import BaseUserTestCase
 
@@ -157,3 +158,36 @@ class SeedAttendanceDemoTests(BaseUserTestCase):
                                 ommit_ping=False, is_default=True, last_uid=0)
         seed("--force", "--days", "30")
         self.assertTrue(Punch.objects.filter(source=PunchSource.DEVICE).exists())
+
+
+class SeedRequestsTests(BaseUserTestCase):
+    def setUp(self):
+        super().setUp()
+        tmp = TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        override = override_settings(MEDIA_ROOT=tmp.name)
+        override.enable()
+        self.addCleanup(override.disable)
+
+    def test_seed_creates_leave_types_and_requests_in_every_status(self):
+        seed("--force", "--days", "30")
+        self.assertEqual(set(LeaveType.objects.values_list("name", flat=True)),
+                         {"Annual", "Sick", "Half-paid", "Unpaid"})
+        sick = LeaveType.objects.get(name="Sick")
+        self.assertTrue(sick.requires_attachment)
+        self.assertEqual(LeaveType.objects.get(name="Annual").yearly_allowance, 21)
+        self.assertEqual(set(Request.objects.values_list("kind", flat=True)), set(RequestKind.values))
+        self.assertEqual(set(Request.objects.values_list("status", flat=True)), set(RequestStatus.values))
+        self.assertTrue(AttendanceDay.objects.filter(status=DayStatus.LEAVE).exists())
+        self.assertTrue(Request.objects.filter(leave_type=sick).exclude(attachment="").exists())
+
+        seed("--force", "--days", "30")
+        self.assertEqual(LeaveType.objects.count(), 4)
+
+    def test_rerun_keeps_requests_and_reset_recreates_them(self):
+        seed("--force", "--days", "30")
+        count = Request.objects.count()
+        seed("--force", "--days", "30")
+        self.assertEqual(Request.objects.count(), count)
+        seed("--force", "--days", "30", "--reset")
+        self.assertEqual(Request.objects.count(), count)

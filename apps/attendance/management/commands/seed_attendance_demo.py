@@ -2,16 +2,19 @@ import random
 from datetime import date, datetime, time, timedelta
 
 from django.conf import settings
+from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.db.models import Q
 from django.db.models.signals import post_save
 
-from apps.attendance.models import (DeductionPolicy, DeductionTier, Holiday, Punch,
-                                    Shift, ShiftAssignment)
+from apps.attendance.models import (DeductionPolicy, DeductionTier, Holiday, LeaveAllowance, LeaveType,
+                                    Punch, Request, Shift, ShiftAssignment)
+from apps.attendance.services import requests as request_service
 from apps.attendance.services.evaluate import recalculate
+from apps.attendance.services.leave import working_dates
 from apps.attendance.services.shifts import resolve_shift, shift_window
-from apps.attendance.types import PunchSource, TierKind
+from apps.attendance.types import PunchSource, RequestKind, RequestStatus, TierKind
 from apps.users.models import Department, User, ZKConfig, fp_signal
 from apps.users.types import UserTypes
 
@@ -22,6 +25,14 @@ GLOBAL_TIERS = [(TierKind.LATE, 15, 0.25), (TierKind.LATE, 60, 0.5), (TierKind.L
 DEPARTMENT_TIERS = [(TierKind.LATE, 10, 0.25), (TierKind.LATE, 45, 0.5),
                     (TierKind.EARLY_LEAVE, 20, 0.25)]
 FALLBACK_DEPARTMENTS = ["Demo Sales", "Demo Marketing"]
+DEMO_TAG = "[demo]"  # prefix of every seeded request's details; how reset finds them
+LEAVE_TYPES = [  # name, pay %, uses balance, yearly allowance, requires attachment
+    ("Annual", 100, True, 21, False), ("Sick", 100, False, 0, True),
+    ("Half-paid", 50, False, 0, False), ("Unpaid", 0, False, 0, False)]
+TINY_PDF = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n"
+            b"2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n"
+            b"3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>endobj\n"
+            b"trailer<</Root 1 0 R>>\n%%EOF\n")
 
 
 class Command(BaseCommand):
@@ -53,6 +64,7 @@ class Command(BaseCommand):
             self._policies(departments[-1])
             users = list(User.objects.filter(is_active=True, department__in=departments)
                          .order_by("username"))
+            reset_ranges = self._delete_requests() if options["reset"] else []
             if options["reset"]:
                 # only demo punches go; recalculate below upserts/deletes the affected days
                 demo_users = User.objects.filter(punches__is_demo=True).distinct()
@@ -60,11 +72,15 @@ class Command(BaseCommand):
                 Punch.objects.filter(is_demo=True).delete()
             punches = self._punches(users, start, end, rng)
             evaluated = recalculate(start, end, users, now=datetime.now())
+            for user, first, last in reset_ranges:  # leave/excuse days outside the punch range too
+                recalculate(first, last, [user], now=datetime.now())
+            self._leave_types()
+            requests = self._requests(users, start)
 
         self.stdout.write(self.style.SUCCESS(
             f"Seeded attendance demo {start} .. {end}: shifts={Shift.objects.count()}, "
             f"assignments created={assignments}, users created={new_users} (seeded {len(users)}), "
-            f"punches created={punches}, days evaluated={evaluated}"))
+            f"punches created={punches}, days evaluated={evaluated}, requests created={requests}"))
 
     def _shifts(self):
         """Existing shifts are reused unchanged; only missing ones are created."""
@@ -216,3 +232,132 @@ class Command(BaseCommand):
             return dict(source=PunchSource.DEVICE, device=zk)
         return dict(source=PunchSource.WEB, ip="10.0.0.%d" % (sum(map(ord, user.username)) % 200 + 10),
                     browser_id=f"demo-{user.username}")
+
+    # ------------------------------------------------------------------ leave & requests
+
+    @staticmethod
+    def _delete_requests() -> list:
+        """Delete demo requests (and the punches approving them made); return (user, first, last) to re-evaluate."""
+        demo = Request.objects.filter(details__startswith=DEMO_TAG)
+        ranges = {}
+        for r in demo:
+            first, last = ranges.get(r.user, (r.start_date, r.end_date))
+            ranges[r.user] = (min(first, r.start_date), max(last, r.end_date))
+        Punch.objects.filter(request__in=demo).delete()
+        demo.filter(cancels__isnull=False).delete()  # cancels is PROTECT: cancellations go first
+        demo.delete()
+        return [(user, first, last) for user, (first, last) in ranges.items()]
+
+    def _leave_types(self):
+        for name, pay, uses_balance, allowance, needs_file in LEAVE_TYPES:
+            LeaveType.objects.get_or_create(name=name, defaults=dict(
+                pay_percent=pay, uses_balance=uses_balance, yearly_allowance=allowance,
+                requires_attachment=needs_file))
+
+    def _requests(self, users, start: date) -> int:
+        """Requests of every kind and status, filed through the service so days and notices are real."""
+        if Request.objects.filter(details__startswith=DEMO_TAG).exists():
+            return 0
+        staff = User.objects.filter(is_active=True).order_by("username")
+        hr = staff.filter(Q(is_superuser=True) | Q(role__in=[UserTypes.HR, UserTypes.OWNER])).first()
+        requesters = [u for u in users if u.role == UserTypes.AGENT and not u.is_superuser][:2]
+        annual = LeaveType.objects.get(name="Annual")
+        for user, days in zip(requesters, (25, 15)):  # per-user overrides of the 21-day default
+            LeaveAllowance.objects.get_or_create(user=user, leave_type=annual, year=date.today().year,
+                                                 defaults={"days": days})
+        before = Request.objects.count()
+        for index, user in enumerate(requesters):
+            manager = staff.filter(role=UserTypes.MANAGER, department=user.department_id).exclude(pk=user.pk).first()
+            decider = manager or hr
+            if decider is not None:
+                _RequestSeeder(user, decider, hr, start).run(full=index == 0)
+        return Request.objects.count() - before
+
+
+class _RequestSeeder:
+    """One user's demo requests. Each step takes its own unused working day, so nothing overlaps."""
+
+    def __init__(self, user, decider, hr, start: date):
+        today = date.today()
+        self.user, self.decider, self.hr = user, decider, hr
+        self.past = working_dates(user, start, today - timedelta(days=1))[::-1]  # newest first
+        self.future = [d for d in working_dates(user, today + timedelta(days=1), today + timedelta(days=60))
+                       if d.year == today.year]
+        self.lt = {t.name: t for t in LeaveType.objects.all()}
+
+    def day(self, future=False):
+        days = self.future if future else self.past
+        return days.pop(0) if days else None
+
+    def file(self, kind, day, note="", **extra):
+        attachment = extra.pop("attachment", None)
+        data = dict(user=self.user, kind=kind, start_date=day, details=f"{DEMO_TAG} {note or kind}", **extra)
+        return request_service.submit(self.user, data, attachment)
+
+    def leave(self, name, future=False, attachment=None):
+        day = self.day(future)
+        if day is None:
+            return None
+        return self.file(RequestKind.LEAVE, day, f"{name} leave", leave_type=self.lt[name],
+                         attachment=attachment)
+
+    def run(self, full: bool):
+        svc, decider = request_service, self.decider
+        approve = lambda r: r and svc.approve(decider, r, "Approved (demo)")
+        reject = lambda r: r and svc.reject(decider, r, "Rejected (demo)")
+        sick = lambda: ContentFile(TINY_PDF, name="sick-note.pdf")
+
+        self.leave("Annual")  # pending
+        approve(self.leave("Annual"))
+        reject(self.leave("Unpaid"))
+        approve(self.leave("Sick", attachment=sick()))
+        if not full:
+            day = self.day()
+            if day:
+                approve(self.file(RequestKind.LATE_EXCUSE, day, "Traffic", minutes=30))
+            day = self.day()
+            if day:
+                self.file(RequestKind.GENERAL, day, "Please update my contact details")
+            return
+
+        approved = self.leave("Annual")
+        approved = approve(approved)
+        if approved:  # started and approved: needs a cancellation request
+            self.file(RequestKind.CANCELLATION, approved.start_date, "Plans changed", cancels=approved)
+        approved = self.leave("Annual")
+        approved = approve(approved)
+        if approved:
+            approve(self.file(RequestKind.CANCELLATION, approved.start_date, "Not needed", cancels=approved))
+        future = self.leave("Annual", future=True)
+        future = approve(future)
+        if future:  # not started yet: the requester cancels directly
+            svc.cancel(self.user, future)
+        pending = self.leave("Unpaid", future=True)
+        if pending:
+            svc.cancel(self.user, pending)
+        revoked = self.leave("Half-paid")
+        revoked = approve(revoked)
+        if revoked and self.hr is not None:
+            svc.revoke(self.hr, revoked, "Entered by mistake (demo)")
+
+        for kind, minutes, decide in ((RequestKind.LATE_EXCUSE, 30, approve),
+                                      (RequestKind.EARLY_EXCUSE, 45, None),
+                                      (RequestKind.EARLY_EXCUSE, 20, reject)):
+            day = self.day()
+            if day:
+                req = self.file(kind, day, "Appointment", minutes=minutes)
+                if decide:
+                    decide(req)
+        for decide in (approve, reject, None):
+            day = self.day()
+            if day:
+                punch_time = datetime.combine(day, time(9, 5))
+                req = self.file(RequestKind.MISSED_PUNCH, day, "Forgot to punch", punch_time=punch_time)
+                if decide:
+                    decide(req)
+        for decide in (approve, None):
+            day = self.day()
+            if day:
+                req = self.file(RequestKind.GENERAL, day, "Please issue an employment letter")
+                if decide:
+                    decide(req)
