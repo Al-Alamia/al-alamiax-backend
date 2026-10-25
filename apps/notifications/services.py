@@ -61,6 +61,13 @@ def resolve_audience(sender, *, users=(), departments=(), projects=(), roles=(),
     return qs.distinct()
 
 
+def is_safe_link(link):
+    """In-app path only: empty, or starts with "/" (not "//") and has no backslash."""
+    if not link:
+        return True
+    return isinstance(link, str) and link.startswith("/") and not link.startswith("//") and "\\" not in link
+
+
 def notify(users, message, *, kind=NotificationKinds.MANUAL, title="", link="", sender=None,
            expires_at=None, audience=None):
     user_ids = list(dict.fromkeys(_pk(u) for u in users))
@@ -68,6 +75,8 @@ def notify(users, message, *, kind=NotificationKinds.MANUAL, title="", link="", 
         raise ValueError("users must not be empty")
     if not (message or "").strip():
         raise ValueError("message must not be blank")
+    if not is_safe_link(link):
+        raise ValueError("link must be an in-app path")
     with transaction.atomic():
         notification = Notification.objects.create(
             kind=kind, title=title, message=message, link=link, sender=sender,

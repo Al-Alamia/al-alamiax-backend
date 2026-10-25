@@ -17,7 +17,7 @@ from .models import Notification, NotificationRecipient
 from .permissions import can_send, sees_all_sent
 from .queries import active_rows, visible_rows
 from .serializers import InboxItemSerializer, SentItemSerializer, _sender
-from .services import notify, resolve_audience
+from .services import is_safe_link, notify, resolve_audience
 from .types import NotificationKinds
 
 
@@ -106,6 +106,8 @@ def send(request):
     if not can_send(request.user):
         return _error("You are not allowed to send notifications.", "forbidden", 403)
     data = request.data
+    if not isinstance(data, dict):
+        return _error("Request body must be an object.", "invalid_body", 400)
     message = data.get("message")
     if not isinstance(message, str) or not message.strip():
         return _error("message is required.", "invalid_body", 400)
@@ -115,6 +117,9 @@ def send(request):
     link = data.get("link") or ""
     if not isinstance(title, str) or len(title) > 120 or not isinstance(link, str) or len(link) > 300:
         return _error("title or link is invalid.", "invalid_body", 400)
+
+    if not is_safe_link(link):
+        return _error("link must be an in-app path.", "invalid_body", 400)
 
     now = _now()
     expires_at = None

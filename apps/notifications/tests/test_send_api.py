@@ -29,7 +29,7 @@ class SendApiTests(BaseUserTestCase):
 
     def _send(self, **body):
         body.setdefault("message", "hello")
-        return self.client.post(B + "send/", body, format="json")
+        return self.client.post(B + "send", body, format="json")
 
     def test_agent_cannot_send(self):
         self.authenticate_as(self.agent)
@@ -46,10 +46,24 @@ class SendApiTests(BaseUserTestCase):
         got = set(n.recipients.values_list("user__username", flat=True))
         self.assertEqual(got, {"superuser", "agent", "mgr", "agent2"})
 
+    def test_send_rejects_non_object_body(self):
+        self.authenticate_as(self.hr)
+        r = self.client.post(B + "send", [1, 2], format="json")
+        self.assertEqual((r.status_code, r.data["type"]), (400, "invalid_body"))
+
+    def test_send_link_validation(self):
+        self.authenticate_as(self.hr)
+        t = [str(self.agent.pk)]
+        for bad in ["javascript:alert(1)", "https://evil.com", "//evil.com", "/\\evil", "rel/path"]:
+            r = self._send(users=t, link=bad)
+            self.assertEqual((r.status_code, r.data["type"]), (400, "invalid_body"), bad)
+        self.assertEqual(self._send(users=t, link="/requests?uuid=x").status_code, 201)
+        self.assertEqual(self._send(users=t, link="").status_code, 201)
+
     def test_send_validation(self):
         self.authenticate_as(self.hr)
         t = [str(self.agent.pk)]
-        self.assertEqual(self.client.post(B + "send/", {"users": t}, format="json").status_code, 400)
+        self.assertEqual(self.client.post(B + "send", {"users": t}, format="json").status_code, 400)
         self.assertEqual(self._send(users=t, message="x" * 1001).status_code, 400)
         self.assertEqual(self._send().status_code, 400)
         self.assertEqual(self._send(users=t, expires_at="2026-10-25T11:00:00").status_code, 400)
@@ -82,18 +96,18 @@ class SendApiTests(BaseUserTestCase):
         notify([self.agent], "hr one", sender=self.hr)
         NotificationRecipient.objects.filter(
             notification__pk=r.data["uuid"], user=self.agent).update(read_at=NOW)
-        r = self.client.get(B + "sent/")
+        r = self.client.get(B + "sent")
         self.assertEqual(r.data["count"], 1)
         item = r.data["results"][0]
         self.assertEqual((item["recipients_count"], item["read_count"]), (2, 1))
         self.assertEqual(item["audience"]["users"][0].keys(), {"uuid", "name"})
         self.assertEqual(item["sender"]["uuid"], str(self.manager.pk))
         self.authenticate_as(self.superuser)
-        self.assertEqual(self.client.get(B + "sent/").data["count"], 2)
+        self.assertEqual(self.client.get(B + "sent").data["count"], 2)
 
     def test_recipients_visible_to_sender_and_owner_only(self):
         n = notify([self.agent], "m", sender=self.hr)
-        url = f"{B}sent/{n.pk}/recipients/"
+        url = f"{B}sent/{n.pk}/recipients"
         self.authenticate_as(self.hr2)
         self.assertEqual(self.client.get(url).status_code, 404)
         self.authenticate_as(self.hr)
@@ -106,7 +120,7 @@ class SendApiTests(BaseUserTestCase):
 
     def test_retract(self):
         n = notify([self.agent], "m", sender=self.hr)
-        url = f"{B}sent/{n.pk}/retract/"
+        url = f"{B}sent/{n.pk}/retract"
         self.authenticate_as(self.hr2)
         self.assertEqual(self.client.post(url).status_code, 404)
         self.authenticate_as(self.hr)
@@ -118,4 +132,4 @@ class SendApiTests(BaseUserTestCase):
         self.assertEqual(self.client.post(url).status_code, 200)
         self.assertEqual(Notification.objects.get(pk=n.pk).retracted_at, first)
         self.authenticate_as(self.agent)
-        self.assertEqual(self.client.get(B + "inbox/").data["count"], 0)
+        self.assertEqual(self.client.get(B + "inbox").data["count"], 0)
