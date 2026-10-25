@@ -171,6 +171,14 @@ class ValidationTests(RequestServiceBase):
         self.assertEqual(self.code(svc.edit, self.agent, req, {"leave_type": self.sick}),
                          "attachment_required")
 
+    def test_edit_moves_single_day_request_to_another_date(self):
+        req = svc.submit(self.agent, {"kind": K.LATE_EXCUSE, "start_date": D(2026, 11, 2), "minutes": 10})
+        edited = svc.edit(self.agent, req, {"start_date": D(2026, 11, 3)})
+        self.assertEqual((edited.start_date, edited.end_date), (D(2026, 11, 3), D(2026, 11, 3)))
+        gen = svc.submit(self.agent, {"kind": K.GENERAL, "start_date": D(2026, 11, 2), "details": "x"})
+        edited = svc.edit(self.agent, gen, {"start_date": D(2026, 11, 4)})
+        self.assertEqual(edited.end_date, D(2026, 11, 4))
+
     def test_edit_permissions_and_state(self):
         req = self.leave()
         with self.assertRaises(PermissionDenied):

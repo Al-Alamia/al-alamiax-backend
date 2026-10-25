@@ -58,15 +58,20 @@ def request_can(viewer, req, today: date) -> dict:
     pending = req.status == RequestStatus.PENDING
     approved = req.status == RequestStatus.APPROVED
     decide = pending and can_decide(viewer, req)
+    cancellation = req.kind == RequestKind.CANCELLATION
+    if decide and cancellation:  # the original must still be approved to be cancelled
+        decide = req.cancels is not None and req.cancels.status == RequestStatus.APPROVED
+    reject = pending and can_decide(viewer, req)
     return {
-        "edit": owner and pending,
+        "edit": owner and pending and not cancellation,
         "cancel": owner and (pending or (approved and req.start_date > today
                                          and req.kind != RequestKind.CANCELLATION)),
         "request_cancellation": (viewer.pk == req.user_id and approved and req.start_date <= today
                                  and req.kind not in (RequestKind.CANCELLATION, RequestKind.GENERAL)),
         "approve": decide,
-        "reject": decide,
+        "reject": reject,
         "revoke": approved and is_hr_plus(viewer) and req.kind != RequestKind.CANCELLATION,
+        "approve_over_balance": (decide and is_hr_plus(viewer) and req.kind == RequestKind.LEAVE),
     }
 
 

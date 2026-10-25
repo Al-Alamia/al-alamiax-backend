@@ -35,6 +35,9 @@ class PeriodDaysTests(FrozenNowMixin, BaseUserTestCase):
         make_day(self.agent, date(2026, 10, 1), "PRESENT")
         make_day(self.agent, date(2026, 10, 3), "LATE", 0.25, late=30, early=5)
         make_day(self.agent, date(2026, 9, 25), "PRESENT")  # previous period
+        make_day(self.agent, date(2026, 10, 4), "LEAVE")
+        make_day(self.agent, date(2026, 10, 5), "LEAVE")
+        make_day(self.agent, date(2026, 10, 6), "EXCUSED")
         self.authenticate_as(self.agent)
 
     def test_summary_and_period(self):
@@ -43,6 +46,7 @@ class PeriodDaysTests(FrozenNowMixin, BaseUserTestCase):
         self.assertEqual(r.data["period"], {"key": "2026-10", "start": "2026-09-26", "end": "2026-10-25"})
         s = r.data["summary"]
         self.assertEqual((s["present"], s["late"], s["absent"]), (1, 1, 1))
+        self.assertEqual((s["leave"], s["excused"]), (2, 1))
         self.assertEqual(s["deduction_days"], 1.25)
         self.assertEqual(s["on_time_percent"], 50.0)
         self.assertEqual((s["late_minutes"], s["early_leave_minutes"]), (30, 5))
@@ -50,7 +54,7 @@ class PeriodDaysTests(FrozenNowMixin, BaseUserTestCase):
 
     def test_results_ordered_by_date_and_in_period(self):
         r = self.client.get(DAYS, {"period": "2026-10"})
-        self.assertEqual([d["date"] for d in r.data["results"]], ["2026-10-01", "2026-10-02", "2026-10-03"])
+        self.assertEqual([d["date"] for d in r.data["results"]], ["2026-10-01", "2026-10-02", "2026-10-03", "2026-10-04", "2026-10-05", "2026-10-06"])
 
     def test_default_period_is_current(self):
         r = self.client.get(DAYS)

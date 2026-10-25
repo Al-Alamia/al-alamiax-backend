@@ -215,7 +215,7 @@ class DetailAndActionTests(RequestsApiBase):
         self.assertEqual(res.data["decided_by"]["uuid"], str(self.manager.uuid))
         self.assertFalse(res.data["can"]["approve"])
         self.assertEqual(set(res.data["can"]), {"edit", "cancel", "request_cancellation", "approve",
-                                                "reject", "revoke"})
+                                                "reject", "revoke", "approve_over_balance"})
 
     def test_manager_approve_out_of_department_404(self):
         req = self.pending(self.outsider)

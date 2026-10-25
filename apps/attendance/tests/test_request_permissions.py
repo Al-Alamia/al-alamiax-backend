@@ -53,7 +53,8 @@ class RequestPermissionTests(RequestServiceBase):
         pending = self.req()
         f = self.flags(self.agent, pending)
         self.assertEqual(f, {"edit": True, "cancel": True, "request_cancellation": False,
-                             "approve": False, "reject": False, "revoke": False})
+                             "approve": False, "reject": False, "revoke": False,
+                             "approve_over_balance": False})
         f = self.flags(self.manager, pending)
         self.assertEqual((f["edit"], f["cancel"], f["approve"], f["reject"]), (False, False, True, True))
         # on-behalf filer keeps edit/cancel
@@ -81,3 +82,25 @@ class RequestPermissionTests(RequestServiceBase):
         done = self.req(status=S.REJECTED)
         self.assertFalse(any(self.flags(self.hr, done).values()))
         self.assertFalse(self.flags(self.hr, self.req(self.hr))["approve"])
+
+    def test_approve_over_balance_flag_is_hr_only_pending_leave(self):
+        leave = self.req(kind=K.LEAVE, leave_type=self.annual)
+        self.assertTrue(self.flags(self.hr, leave)["approve_over_balance"])
+        self.assertTrue(self.flags(self.superuser, leave)["approve_over_balance"])
+        self.assertFalse(self.flags(self.manager, leave)["approve_over_balance"])
+        self.assertFalse(self.flags(self.agent, leave)["approve_over_balance"])
+        self.assertFalse(self.flags(self.hr, self.req())["approve_over_balance"])
+        decided = self.req(kind=K.LEAVE, leave_type=self.annual, status=S.APPROVED)
+        self.assertFalse(self.flags(self.hr, decided)["approve_over_balance"])
+        own = self.req(self.hr, kind=K.LEAVE, leave_type=self.annual)
+        self.assertFalse(self.flags(self.hr, own)["approve_over_balance"])
+
+    def test_cancellation_flags(self):
+        original = self.req(status=S.APPROVED, start=D(2026, 10, 1))
+        canc = self.req(kind=K.CANCELLATION, start=D(2026, 10, 1), cancels=original)
+        self.assertFalse(self.flags(self.agent, canc)["edit"])
+        self.assertTrue(self.flags(self.manager, canc)["approve"])
+        original.status = S.REVOKED
+        original.save()
+        f = self.flags(self.manager, canc)
+        self.assertEqual((f["approve"], f["reject"]), (False, True))

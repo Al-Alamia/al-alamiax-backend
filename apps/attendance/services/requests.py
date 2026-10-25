@@ -90,6 +90,9 @@ def _validate(actor, data: dict, attachment=None, existing=None) -> dict:
         if not can_file_for(actor, user):
             raise PermissionDenied("You cannot file requests for this user.")
     v.update({f: data[f] for f in FIELDS if f in data})
+    if (kind not in (RequestKind.LEAVE, RequestKind.CANCELLATION)
+            and data.get("start_date") is not None and "end_date" not in data):
+        v["end_date"] = v["start_date"]  # single-day kinds follow the date they are moved to
     v["details"] = (v["details"] or "").strip()
     _reject_foreign_fields(kind, v)
 

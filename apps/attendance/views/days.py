@@ -49,6 +49,8 @@ def _summary(days) -> dict:
         "weekend": _sum_status(days, DayStatus.WEEKEND),
         "holiday": _sum_status(days, DayStatus.HOLIDAY),
         "no_shift": _sum_status(days, DayStatus.NO_SHIFT),
+        "leave": _sum_status(days, DayStatus.LEAVE),
+        "excused": _sum_status(days, DayStatus.EXCUSED),
         "late_minutes": sum(d.late_minutes for d in days),
         "early_leave_minutes": sum(d.early_leave_minutes for d in days),
         "deduction_days": round(sum(d.deduction_days for d in days), 2),
