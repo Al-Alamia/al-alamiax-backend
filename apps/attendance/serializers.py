@@ -2,7 +2,8 @@ from typing import Optional
 
 from rest_framework import serializers
 
-from apps.attendance.models import (AttendanceDay, AttendanceSettings, DeductionPolicy, Holiday, Punch,
+from apps.attendance.models import (AttendanceDay, AttendanceSettings, DeductionPolicy, Holiday, LeaveAllowance,
+                                    LeaveType, Punch,
                                     Request, Shift, ShiftAssignment, WebPunchPolicy)
 from apps.attendance.permissions import request_can
 from apps.users.models import Department, User, ZKConfig
@@ -170,3 +171,20 @@ class RequestSerializer(serializers.ModelSerializer):
             days = req.attendance_days.order_by("date")
             data["days"] = [{"date": d.date.isoformat(), "status": d.status} for d in days]
         return data
+
+
+def leave_type_data(t: LeaveType) -> dict:
+    return {"uuid": str(t.uuid), "name": t.name, "pay_percent": t.pay_percent, "uses_balance": t.uses_balance,
+            "yearly_allowance": float(t.yearly_allowance), "requires_attachment": t.requires_attachment,
+            "is_active": t.is_active}
+
+
+def leave_allowance_data(a: LeaveAllowance) -> dict:
+    return {"uuid": str(a.uuid), "user": str(a.user_id), "leave_type": str(a.leave_type_id), "year": a.year,
+            "days": float(a.days)}
+
+
+def balance_data(row: dict) -> dict:
+    lt = row["leave_type"]
+    return {"leave_type": {"uuid": str(lt["uuid"]), "name": lt["name"]},
+            **{k: float(row[k]) for k in ("allowance", "used", "pending", "remaining")}}
