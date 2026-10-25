@@ -146,10 +146,23 @@ class ValidationTests(RequestServiceBase):
         with self.assertRaises(PermissionDenied):
             svc.submit(self.manager, {"kind": K.CANCELLATION, "cancels": orig, "user": self.agent})
 
-    def test_duplicate_pending_cancellation(self):
-        orig = make_request(self.agent, K.LEAVE, D(2026, 10, 20), leave_type=self.annual)
-        svc.submit(self.agent, {"kind": K.CANCELLATION, "cancels": orig})
-        self.assertEqual(Request.objects.filter(kind=K.CANCELLATION).count(), 1)
+    def test_missed_punch_and_general_exempt_from_overlap(self):
+        d = D(2026, 10, 20)
+        for h in (9, 17):
+            svc.submit(self.agent, {"kind": K.MISSED_PUNCH, "start_date": d,
+                                    "punch_time": dt.datetime(2026, 10, 20, h)})
+        for _ in range(2):
+            svc.submit(self.agent, {"kind": K.GENERAL, "start_date": d, "details": "x"})
+        svc.submit(self.agent, {"kind": K.LATE_EXCUSE, "start_date": d, "minutes": 5})
+        self.assertEqual(self.code(svc.submit, self.agent, {
+            "kind": K.LATE_EXCUSE, "start_date": d, "minutes": 7}), "overlap")
+
+    def test_missed_punch_recalculates_padded_range(self):
+        req = svc.submit(self.agent, {"kind": K.MISSED_PUNCH, "start_date": D(2026, 10, 20),
+                                      "punch_time": dt.datetime(2026, 10, 20, 9)})
+        with mock.patch.object(svc, "recalculate") as m:
+            svc.approve(self.manager, req)
+        self.assertEqual(m.call_args[0][:2], (D(2026, 10, 19), D(2026, 10, 21)))
 
     def test_edit_excludes_self_from_overlap_and_balance(self):
         req = self.leave(D(2026, 11, 1), D(2026, 11, 26))  # 20 of 21

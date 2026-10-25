@@ -122,7 +122,7 @@ def _validate(actor, data: dict, attachment=None, existing=None) -> dict:
     if kind == RequestKind.LEAVE:
         _validate_leave(user, v, has_file=attachment is not None or bool(existing and existing.attachment),
                         existing=existing)
-    if kind != RequestKind.CANCELLATION:
+    if kind in (RequestKind.LEAVE, *EXCUSES):
         _check_overlap(user, kind, start, end, existing)
     return v
 
