@@ -2,7 +2,9 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Optional
 
-from apps.attendance.models import DeductionPolicy, Shift, ShiftAssignment
+from django.db.models import Q
+
+from apps.attendance.models import DeductionPolicy, Holiday, Shift, ShiftAssignment
 
 WINDOW_BEFORE = timedelta(hours=4)
 WINDOW_AFTER = timedelta(hours=6)
@@ -23,6 +25,14 @@ def resolve_shift(user, d: date) -> Optional[Shift]:
     if assignment is None and user.department_id is not None:
         assignment = qs.filter(department_id=user.department_id).order_by("-effective_from").first()
     return assignment.shift if assignment else None
+
+
+def is_holiday(user, d: date) -> bool:
+    """True if ``d`` is a global holiday or a holiday of the user's department."""
+    q = Q(department__isnull=True)
+    if user.department_id is not None:
+        q |= Q(department_id=user.department_id)
+    return Holiday.objects.filter(q, date=d).exists()
 
 
 def shift_window(shift: Shift, d: date) -> ShiftWindow:

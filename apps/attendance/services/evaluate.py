@@ -2,13 +2,12 @@ from datetime import date, datetime, timedelta
 from typing import Optional
 
 from django.db import transaction
-from django.db.models import Q
 
-from apps.attendance.models import AttendanceDay, AttendanceSettings, Holiday, Punch, Request
+from apps.attendance.models import AttendanceDay, AttendanceSettings, Punch, Request
 from apps.attendance.types import DayStatus, RequestKind, RequestStatus, TierKind
 
 from .periods import period_key_for, period_range
-from .shifts import is_closed, owner_day, policy_for, resolve_shift, shift_window, windows_for
+from .shifts import is_closed, is_holiday, owner_day, policy_for, resolve_shift, shift_window, windows_for
 
 
 def _minutes(delta: timedelta) -> int:
@@ -74,10 +73,7 @@ def evaluate_day(user, d: date, now: Optional[datetime] = None) -> Optional[Atte
     first_in = punches[0] if punches else None
     last_out = punches[-1] if len(punches) > 1 else None
     closed = is_closed(window, now)
-    holiday_q = Q(department__isnull=True)
-    if user.department_id is not None:
-        holiday_q |= Q(department_id=user.department_id)
-    holiday = Holiday.objects.filter(holiday_q, date=d).exists()
+    holiday = is_holiday(user, d)
     is_weekend = d.weekday() in (shift.weekend_days or [])
     fields.update(shift=shift, shift_name=shift.name, expected_start=window.expected_start,
                   expected_end=window.expected_end, grace_minutes=shift.grace_minutes,
