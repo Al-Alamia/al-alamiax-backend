@@ -1,5 +1,8 @@
+from datetime import date
+
 from rest_framework.permissions import SAFE_METHODS, BasePermission, IsAuthenticated
 
+from apps.attendance.types import RequestKind, RequestStatus
 from apps.users.models import User
 from apps.users.types import UserTypes
 
@@ -36,6 +39,35 @@ def can_correct(viewer, target) -> bool:
     if viewer.pk == target.pk:  # nobody below HR approves their own corrections
         return False
     return _is_manager_of(viewer, target)
+
+
+def can_decide(viewer, req) -> bool:
+    """Approve/reject: ``can_correct`` plus HR cannot decide their own request (only Owner/superuser)."""
+    if viewer.role == UserTypes.HR and viewer.pk == req.user_id and not viewer.is_superuser:
+        return False
+    return can_correct(viewer, req.user)
+
+
+def can_file_for(viewer, target) -> bool:
+    return viewer.pk == target.pk or is_hr_plus(viewer) or _is_manager_of(viewer, target)
+
+
+def request_can(viewer, req, today: date) -> dict:
+    """The ``can`` flags serialized with every request."""
+    owner = viewer.pk in (req.user_id, req.created_by_id)
+    pending = req.status == RequestStatus.PENDING
+    approved = req.status == RequestStatus.APPROVED
+    decide = pending and can_decide(viewer, req)
+    return {
+        "edit": owner and pending,
+        "cancel": owner and (pending or (approved and req.start_date > today
+                                         and req.kind != RequestKind.CANCELLATION)),
+        "request_cancellation": (viewer.pk == req.user_id and approved and req.start_date <= today
+                                 and req.kind not in (RequestKind.CANCELLATION, RequestKind.GENERAL)),
+        "approve": decide,
+        "reject": decide,
+        "revoke": approved and is_hr_plus(viewer) and req.kind != RequestKind.CANCELLATION,
+    }
 
 
 class IsHRPlus(BasePermission):
