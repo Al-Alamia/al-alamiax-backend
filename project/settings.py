@@ -56,6 +56,7 @@ LOCAL_APPS = [
     'apps.treasury.apps.TreasuryConfig' ,
     'apps.purposes.apps.PurposesConfig' ,
     'apps.attendance.apps.AttendanceConfig' ,
+    'apps.penalties.apps.PenaltiesConfig',
     'apps.notifications.apps.NotificationsConfig',
 ]
 

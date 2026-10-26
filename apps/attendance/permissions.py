@@ -11,7 +11,7 @@ def is_hr_plus(user) -> bool:
     return bool(user.is_superuser or user.role in (UserTypes.HR, UserTypes.OWNER))
 
 
-def _is_manager_of(viewer, target) -> bool:
+def is_manager_of(viewer, target) -> bool:
     return (viewer.role == UserTypes.MANAGER and viewer.department_id is not None
             and viewer.department_id == target.department_id)
 
@@ -29,7 +29,7 @@ def scoped_users(user):
 def can_view(viewer, target) -> bool:
     """Deliberately ignores ``is_active``: HR and managers may view a deactivated employee's history
     (``scoped_users``, used for lists such as the daily board, shows active users only)."""
-    return viewer.pk == target.pk or is_hr_plus(viewer) or _is_manager_of(viewer, target)
+    return viewer.pk == target.pk or is_hr_plus(viewer) or is_manager_of(viewer, target)
 
 
 def can_correct(viewer, target) -> bool:
@@ -38,7 +38,7 @@ def can_correct(viewer, target) -> bool:
         return True
     if viewer.pk == target.pk:  # nobody below HR approves their own corrections
         return False
-    return _is_manager_of(viewer, target)
+    return is_manager_of(viewer, target)
 
 
 def can_decide(viewer, req) -> bool:
@@ -49,7 +49,7 @@ def can_decide(viewer, req) -> bool:
 
 
 def can_file_for(viewer, target) -> bool:
-    return viewer.pk == target.pk or is_hr_plus(viewer) or _is_manager_of(viewer, target)
+    return viewer.pk == target.pk or is_hr_plus(viewer) or is_manager_of(viewer, target)
 
 
 def request_can(viewer, req, today: date) -> dict:
