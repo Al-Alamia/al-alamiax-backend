@@ -135,6 +135,12 @@ class UserFilesApiTests(BaseUserTestCase):
             self.authenticate_as(who)
             self.assertEqual(self.client.get(f"/api/users/files/{f.uuid}/download").status_code, 404)
 
+    def test_download_exposes_content_disposition_cross_origin(self):
+        f = self.make_file()
+        self.authenticate_as(self.hr)
+        r = self.client.get(f"/api/users/files/{f.uuid}/download", HTTP_ORIGIN="http://localhost:3000")
+        self.assertIn("content-disposition", r["Access-Control-Expose-Headers"].lower())
+
     def test_download_filename_sanitized(self):
         self.authenticate_as(self.hr)
         uuid = self.post(self.agent, title='../../a"b\r\nc').data["uuid"]

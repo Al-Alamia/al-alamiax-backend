@@ -234,6 +234,8 @@ SIMPLE_JWT = {
 CORS_ALLOW_ALL_ORIGINS = True
 
 CORS_ALLOW_CREDENTIALS = True
+# Cross-origin file downloads read the server-chosen filename (with extension).
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 
 
 
