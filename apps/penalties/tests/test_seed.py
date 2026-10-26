@@ -34,7 +34,7 @@ class SeedPenaltiesDemoTests(BaseUserTestCase):
             self.assertIn("[demo]", p.description)
             self.assertIn(p.created_by.role, [UserTypes.HR, UserTypes.OWNER])
             self.assertFalse(p.user.is_superuser)
-            self.assertNotEqual(p.user, self.hr)
+            self.assertNotEqual(p.user, p.created_by)
 
     def test_seed_idempotent(self):
         seed()
