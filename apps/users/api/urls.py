@@ -1,11 +1,11 @@
 from django.urls import path , include
 from apps.users.views.report_views import add_report , check_report , get_reports
 from apps.users.views.authenticate import login , logout , token_refresh , permissions
+from apps.users.views import admin_users
 from apps.users.views.passwords import change_password , set_password
 from apps.users.views import (
     ProjectViewSet , 
     DepartmentViewSet , 
-    UsersAPI ,
     LeadAPI ,
     ProfileAPI ,
     FingerPrintIDAPI,
@@ -21,7 +21,11 @@ urlpatterns = [
     path('permissions',permissions) ,
     path('change_password',change_password) ,
     path('<uuid:uuid>/set_password',set_password) ,
-    path('user',UsersAPI.as_view()) ,
+    path('admin/users', admin_users.users),
+    path('admin/users/options', admin_users.options),
+    path('admin/users/<uuid:uuid>', admin_users.user_detail),
+    path('admin/users/<uuid:uuid>/deactivate', admin_users.deactivate),
+    path('admin/users/<uuid:uuid>/activate', admin_users.activate),
     path('project', ProjectViewSet.as_view({'get': 'list', 'post': 'create'})),
     path('project/<uuid:uuid>', ProjectViewSet.as_view({'get': 'retrieve', 'put': 'update', 'patch': 'partial_update', 'delete': 'destroy'})),
     path('department', DepartmentViewSet.as_view({'get': 'list', 'post': 'create'})),

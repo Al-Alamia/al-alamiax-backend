@@ -40,20 +40,20 @@ class PasswordStorageTests(BaseUserTestCase):
 
     def test_api_create_user_hashes_password(self):
         self.authenticate_as(self.superuser)
-        r = self.client.post("/api/users/user", {
-            "username": "newbie", "password": "secret1",
+        r = self.client.post("/api/users/admin/users", {
+            "username": "newbie", "password": "Zx9!kLmQ47pw",
             "project": str(self.project.uuid), "department": str(self.department.uuid),
         }, format="json")
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(User.objects.get(username="newbie").check_password("secret1"))
+        self.assertEqual(r.status_code, 201)
+        self.assertTrue(User.objects.get(username="newbie").check_password("Zx9!kLmQ47pw"))
         keys = set(_keys(json.loads(r.content)))
         self.assertNotIn("password", keys)
         self.assertNotIn("password_normal", keys)
 
     def test_update_user_keeps_password(self):
         self.authenticate_as(self.superuser)
-        r = self.client.put(f"/api/users/user?uuid={self.agent.uuid}",
-                            {"title": "Senior Agent", "password": "hacked1"}, format="json")
+        r = self.client.patch(f"/api/users/admin/users/{self.agent.uuid}",
+                              {"title": "Senior Agent", "password": "hacked1"}, format="json")
         self.assertEqual(r.status_code, 200)
         self.agent.refresh_from_db()
         self.assertEqual(self.agent.title, "Senior Agent")
@@ -61,7 +61,7 @@ class PasswordStorageTests(BaseUserTestCase):
 
     def test_user_list_has_no_passwords(self):
         self.authenticate_as(self.superuser)
-        r = self.client.get("/api/users/user")
+        r = self.client.get("/api/users/admin/users")
         self.assertEqual(r.status_code, 200)
         self.assertNotIn("password_normal", r.content.decode())
         self.assertNotIn("pbkdf2", r.content.decode())

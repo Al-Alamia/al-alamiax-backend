@@ -25,26 +25,6 @@ from permissions.users import IsAgent , IsManager , IsHR , IsOwner , IsSuperUser
 
 
 
-class UsersAPI(APIViewSet):
-    pagination_class = Pagination1K
-    model = User
-    model_serializer= UserSerializer
-    order_by = ('-is_active','role','username')
-    search_filters = ["uuid",'username','project' ,"department","role","is_active","is_superuser","crm_username"]
-    creating_filters = ["username","password","is_active","role","is_staff","title","project","department","crm_username"]
-    requiered_fields = ['username',"password"]
-    updating_filters = ["username","is_active","role","is_staff","title","project","department","crm_username"]
-    unique_field:str = 'uuid'
-    permissions_config = {
-        "GET": [IsSuperUser | IsOwner | IsManager | IsHR],
-        "POST": [IsSuperUser | IsOwner | IsManager | IsHR],
-        "PUT": [IsSuperUser | IsOwner | IsManager | IsHR],
-        "DELETE": [IsSuperUser | IsOwner | IsManager | IsHR],
-    }
-
-
-
-
 class ProfileAPI(APIViewSet):
     parser_classes=[MultiPartParser , FormParser]
     # permission_classes = [IsAuthenticated ]
