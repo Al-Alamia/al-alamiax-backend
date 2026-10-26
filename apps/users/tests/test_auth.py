@@ -38,7 +38,7 @@ class AuthTests(BaseUserTestCase):
         }
         response = self.client.post(url, data, format='json')
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-        self.assertEqual(response.data["type"], "NotImplementedError")
+        self.assertEqual(response.data["type"], "device_required")
 
     def test_logout(self):
         url = "/api/users/logout"

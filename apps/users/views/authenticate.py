@@ -14,6 +14,7 @@ from apps.users.auth import Login
 from auth.constants import AUTH_COOKIE
 from apps.users.models import User, FingerPrintID
 from apps.users.serializers import FingerPrintIDSerializer
+from apps.users.services.devices import DeviceLoginError, register_login_device
 
 
 @api_view(["POST"])
@@ -23,19 +24,22 @@ def login(request: Request):
         data = login_class.login(request)
         uuid = data.get("uuid",None)
         is_superuser = data.get("is_superuser",False)
+        user = User.objects.filter(uuid=uuid).first() if uuid else None
         if is_superuser : 
             data.update({"unique_id":"SuperUser"})
-        elif uuid :
-            finger = FingerPrintID.objects.filter(user__uuid=uuid , unique_id=request.data.get("unique_id",None)).first()
-            if not finger :
-                raise NotImplementedError("No Devices ID added Please add one !")
+        elif user :
+            finger = register_login_device(
+                user, request.data.get("unique_id", None), request.META.get("HTTP_USER_AGENT", ""))
             data.update({"unique_id":FingerPrintIDSerializer(finger).data})
         else :
             raise NotImplementedError
 
+        data["must_change_password"] = bool(user.must_change_password) if user else False
         status = HTTP_200_OK
         response = Response(data,status)
         response.set_cookie(AUTH_COOKIE , data[AUTH_COOKIE])
+    except DeviceLoginError as e :
+        response = Response({"message": e.message, "type": e.type}, HTTP_401_UNAUTHORIZED)
     except Exception as e :
         data = {
             "message" : str(e),

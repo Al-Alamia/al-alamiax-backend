@@ -29,6 +29,7 @@ def change_password(request):
     if error:
         return Response({"message": error}, HTTP_400_BAD_REQUEST)
     request.user.set_password(new_password)
+    request.user.must_change_password = False
     request.user.save()
     return Response({"message": "Password changed successfully"}, HTTP_200_OK)
 
@@ -49,6 +50,7 @@ def set_password(request, uuid):
     if error:
         return Response({"message": error}, HTTP_400_BAD_REQUEST)
     user.set_password(new_password)
+    user.must_change_password = True
     user.save()
     # Revoke every outstanding refresh token so existing sessions end.
     for token in OutstandingToken.objects.filter(user=user):

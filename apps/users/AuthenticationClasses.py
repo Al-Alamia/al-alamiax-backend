@@ -1,5 +1,5 @@
 from rest_framework_simplejwt.authentication import JWTAuthentication , Token
-from rest_framework.exceptions import AuthenticationFailed
+from rest_framework.exceptions import AuthenticationFailed, PermissionDenied
 from django.http.request import HttpRequest
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -7,6 +7,33 @@ from typing import Optional , Tuple
 import json
 
 User = get_user_model()
+
+
+MUST_CHANGE_ALLOWED_PATHS = (
+    "/api/users/change_password",
+    "/api/users/logout",
+    "/api/users/token/refresh",
+)
+MUST_CHANGE_GET_PATHS = ("/api/users/me/profile",)
+
+
+def enforce_password_change(request, credentials):
+    """Block users flagged ``must_change_password`` from everything but the password-change flow."""
+    if not isinstance(credentials, tuple):
+        return credentials
+    user = credentials[0]
+    if getattr(user, "must_change_password", False):
+        path = request.path
+        if not (path in MUST_CHANGE_ALLOWED_PATHS
+                or (request.method == "GET" and path in MUST_CHANGE_GET_PATHS)):
+            raise PermissionDenied(detail={"message": "Password change required",
+                                           "type": "password_change_required"})
+    return credentials
+
+
+class EnforcedJWTAuthentication(JWTAuthentication):
+    def authenticate(self, request):
+        return enforce_password_change(request, super().authenticate(request))
 
 
 class JWTAuthenticationMixin(JWTAuthentication):
@@ -25,11 +52,11 @@ class JWTAuthenticationMixin(JWTAuthentication):
 
 class CookieAuthentication(JWTAuthenticationMixin):
     def authenticate(self, request:HttpRequest):
-        return self.check_token(request.COOKIES ,  settings.SIMPLE_JWT["AUTH_COOKIE"])
+        return enforce_password_change(request, self.check_token(request.COOKIES ,  settings.SIMPLE_JWT["AUTH_COOKIE"]))
 
 class HeaderAuthentication(JWTAuthenticationMixin):
     def authenticate(self, request:HttpRequest):
-        return self.check_token(dict(request.headers) ,settings.SIMPLE_JWT["AUTH_HEADER"] )
+        return enforce_password_change(request, self.check_token(dict(request.headers) ,settings.SIMPLE_JWT["AUTH_HEADER"] ))
 
 class BodyAuthentication(JWTAuthenticationMixin):
     def authenticate(self, request:HttpRequest):
@@ -37,4 +64,4 @@ class BodyAuthentication(JWTAuthenticationMixin):
             data = json.loads(request.body)
         except json.JSONDecodeError:
             data = {}
-        return self.check_token(data,settings.SIMPLE_JWT["AUTH_BODY"] )
+        return enforce_password_change(request, self.check_token(data,settings.SIMPLE_JWT["AUTH_BODY"] ))
