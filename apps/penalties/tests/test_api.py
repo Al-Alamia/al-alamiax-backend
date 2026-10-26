@@ -73,6 +73,23 @@ class TypeTests(PenaltyApiBase):
             r = self.client.post(TYPES, bad, format="json")
             self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"), bad)
 
+    def test_types_default_must_fit_kind(self):
+        self.authenticate_as(self.hr)
+        for bad in ("0.25", "0.001"):
+            r = self.client.post(TYPES, {"name": "X", "kind": "days", "default_value": bad}, format="json")
+            self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"), bad)
+        r = self.client.post(TYPES, {"name": "X", "kind": "days", "default_value": "0.5"}, format="json")
+        self.assertEqual(r.status_code, 201)
+
+    def test_types_patch_validates_merged_kind_and_default(self):
+        self.authenticate_as(self.hr)
+        t = make_type(name="M", kind="money", default_value=Decimal("12.34"))
+        r = self.client.patch(f"{TYPES}/{t.uuid}", {"kind": "days"}, format="json")
+        self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))
+        t2 = make_type(name="M2", kind="money", default_value=Decimal("2.00"))
+        r = self.client.patch(f"{TYPES}/{t2.uuid}", {"kind": "days"}, format="json")
+        self.assertEqual(r.status_code, 200)
+
     def test_types_patch_hr(self):
         t = make_type()
         self.authenticate_as(self.agent)

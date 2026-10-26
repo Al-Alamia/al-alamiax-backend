@@ -17,7 +17,7 @@ from apps.users.views.pagination import DefaultPagination
 from .models import Penalty, PenaltyType
 from .permissions import can_add, can_manage_types, can_view, penalty_targets, visible_penalties
 from .serializers import penalty_data, type_data, user_brief
-from .services import PenaltyError, create_penalty, period_total, void_penalty
+from .services import PenaltyError, _validate_value, create_penalty, period_total, void_penalty
 from .types import PenaltyKind
 
 MAX_VALUE = Decimal("99999999.99")
@@ -102,13 +102,17 @@ def _type_values(body: dict, current: Optional[PenaltyType]) -> dict:
         if raw is None or isinstance(raw, bool):
             raise _Invalid("'default_value' is required.")
         value = _value(raw, "default_value")
-        if value <= 0:
-            raise _Invalid("'default_value' must be greater than zero.")
         out["default_value"] = value.quantize(Decimal("0.01"))
     if "is_active" in body:
         if not isinstance(body["is_active"], bool):
             raise _Invalid("is_active must be a boolean.")
         out["is_active"] = body["is_active"]
+    if "kind" in out or "default_value" in out:
+        try:  # validate the merged pair: a kind-only change can invalidate the stored default
+            _validate_value(out.get("kind", current.kind if partial else None),
+                            out.get("default_value", current.default_value if partial else None))
+        except PenaltyError as exc:
+            raise _Invalid(f"Invalid default value for this kind: {exc.message}")
     return out
 
 
