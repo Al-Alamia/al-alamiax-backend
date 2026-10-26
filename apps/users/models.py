@@ -14,11 +14,10 @@ from django.db.models.signals import pre_save , post_save , post_delete
 from core.models import BaseModel
 import json
 import os
-import uuid
 import logging
 from django.utils.timezone import now
 from django.urls import reverse
-from uuid import uuid1
+from uuid import uuid1, uuid4
 from zk import ZK, const
 from zk.attendance import Attendance
 from zk.user import User as ZkUser
@@ -90,7 +89,7 @@ class FingerPrintID(BaseModel):
 
 def user_file_upload_path(instance, filename):
     ext = os.path.splitext(filename)[1].lower()
-    return f"user_files/{instance.user_id}/{uuid.uuid4().hex}{ext}"
+    return f"user_files/{instance.user_id}/{uuid4().hex}{ext}"
 
 
 class UserFile(BaseModel):
