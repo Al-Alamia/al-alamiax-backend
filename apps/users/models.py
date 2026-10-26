@@ -230,16 +230,18 @@ def profile_creator_signal(sender:User, instance:User, created:bool, **kwargs):
             profile.save()
     
 
+def snapshot_values(instance) -> dict:
+    """Field name -> str(value) for every concrete field; the format stored in UpdateHistory."""
+    return {field.name: str(getattr(instance, field.name)) for field in instance._meta.fields}
+
+
 def create_update_history(sender, instance:BaseModel, **kwargs):
     if issubclass(sender, BaseModel):  # Check if the sender is a subclass of BaseModel
-        previous_values = {}
         try : 
             old_instance = sender.objects.get(uuid=instance.uuid)
         except sender.DoesNotExist:
             return
-        for field in instance._meta.fields:
-            previous_values[field.name] = str(getattr(old_instance, field.name))
-        previous_values_str = json.dumps(previous_values)
+        previous_values_str = json.dumps(snapshot_values(old_instance))
         UpdateHistory.objects.create(
             user=getattr(instance,"__by",None),  
             previous_values=previous_values_str,

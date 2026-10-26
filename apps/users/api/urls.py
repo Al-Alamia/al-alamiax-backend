@@ -1,7 +1,7 @@
 from django.urls import path , include
 from apps.users.views.report_views import add_report , check_report , get_reports
 from apps.users.views.authenticate import login , logout , token_refresh , permissions
-from apps.users.views import admin_users, devices, profile
+from apps.users.views import admin_users, devices, files, history, profile
 from apps.users.views.passwords import change_password , set_password
 from apps.users.views import (
     ProjectViewSet , 
@@ -25,6 +25,12 @@ urlpatterns = [
     path('admin/users/<uuid:uuid>/deactivate', admin_users.deactivate),
     path('admin/users/<uuid:uuid>/activate', admin_users.activate),
     path('admin/users/<uuid:uuid>/devices', devices.user_devices),
+    path('admin/users/<uuid:uuid>/files', files.user_files),
+    path('admin/users/<uuid:uuid>/history', history.history),
+    path('admin/users/<uuid:uuid>/actions', history.actions),
+    path('files/<uuid:uuid>/download', files.download),
+    path('files/<uuid:uuid>', files.file_detail),
+    path('me/files', files.my_files),
     path('devices/pending', devices.pending),
     path('devices/<uuid:uuid>/approve', devices.approve),
     path('devices/<uuid:uuid>/reject', devices.reject),
