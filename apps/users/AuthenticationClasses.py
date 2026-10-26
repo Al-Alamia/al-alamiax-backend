@@ -10,6 +10,7 @@ User = get_user_model()
 
 
 MUST_CHANGE_ALLOWED_PATHS = (
+    "/api/users/login",  # Login's own token-reuse path runs these classes directly
     "/api/users/change_password",
     "/api/users/logout",
     "/api/users/token/refresh",

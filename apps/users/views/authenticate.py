@@ -18,6 +18,8 @@ from apps.users.services.devices import DeviceLoginError, register_login_device
 
 
 @api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
 def login(request: Request):
     login_class = Login()
     try :

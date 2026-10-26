@@ -39,12 +39,39 @@ class MustChangeTests(BaseUserTestCase):
 
     def test_must_change_allowlist(self):
         auth = self._auth(self._flag_and_login())
-        for method, path in (("post", "/api/users/change_password"), ("post", "/api/users/logout"),
-                             ("post", "/api/users/token/refresh"), ("get", "/api/users/me/profile")):
-            res = self.client.post(path, {}, format="json", **auth) if method == "post" \
-                else self.client.get(path, **auth)
-            if res.status_code == 403:
-                self.assertNotEqual(res.json(), BLOCKED, path)
+        res = self.client.post("/api/users/change_password", {}, format="json", **auth)
+        self.assertEqual(res.status_code, 400)
+        self.assertNotIn("password_change_required", res.content.decode())
+        res = self.client.post("/api/users/logout", {}, format="json", **auth)
+        self.assertEqual(res.status_code, 200)
+        res = self.client.post("/api/users/token/refresh", {}, format="json", **auth)
+        self.assertEqual(res.status_code, 401)  # refresh token missing, not blocked
+        self.assertNotEqual(res.json().get("type"), "password_change_required")
+        res = self.client.get("/api/users/me/profile", **auth)  # may 404 until the route exists
+        if res.status_code == 403:
+            self.assertNotEqual(res.json(), BLOCKED)
+
+    def test_non_allowlisted_post_blocked(self):
+        auth = self._auth(self._flag_and_login())
+        res = self.client.post("/api/users/project", {"name": "x"}, format="json", **auth)
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(res.json(), BLOCKED)
+
+    def test_flagged_user_can_login_with_valid_token(self):
+        res = self._flag_and_login()
+        token = res.data["Authorization"]
+        creds = {"username": "agent", "password": "pass123", "unique_id": "test-device-id"}
+        by_header = self.client.post(LOGIN, creds, format="json", HTTP_AUTHORIZATION=f"Bearer {token}")
+        self.assertEqual(by_header.status_code, 200)
+        self.assertTrue(by_header.data["must_change_password"])
+        self.client.cookies["Authorization"] = token
+        by_cookie = self.client.post(LOGIN, creds, format="json")
+        self.assertEqual(by_cookie.status_code, 200)
+
+    def test_invalid_token_does_not_break_login(self):
+        creds = {"username": "agent", "password": "pass123", "unique_id": "test-device-id"}
+        res = self.client.post(LOGIN, creds, format="json", HTTP_AUTHORIZATION="Bearer garbage")
+        self.assertEqual(res.status_code, 200)
 
     def test_change_password_clears_flag(self):
         auth = self._auth(self._flag_and_login())
