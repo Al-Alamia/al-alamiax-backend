@@ -230,6 +230,13 @@ def profile_creator_signal(sender:User, instance:User, created:bool, **kwargs):
             profile.save()
     
 
+HISTORY_REDACTED = {"password", "last_login", "updated_at", "created_at"}
+
+
+def is_redacted_field(name: str) -> bool:
+    return name in HISTORY_REDACTED or "password" in name.lower()
+
+
 def snapshot_values(instance) -> dict:
     """Field name -> str(value) for every concrete field; the format stored in UpdateHistory."""
     return {field.name: str(getattr(instance, field.name)) for field in instance._meta.fields}
@@ -241,7 +248,11 @@ def create_update_history(sender, instance:BaseModel, **kwargs):
             old_instance = sender.objects.get(uuid=instance.uuid)
         except sender.DoesNotExist:
             return
-        previous_values_str = json.dumps(snapshot_values(old_instance))
+        old_values = snapshot_values(old_instance)
+        new_values = snapshot_values(instance)
+        if all(old_values[k] == new_values.get(k) for k in old_values if not is_redacted_field(k)):
+            return  # only redacted fields (e.g. last_login) changed: nothing worth auditing
+        previous_values_str = json.dumps(old_values)
         UpdateHistory.objects.create(
             user=getattr(instance,"__by",None),  
             previous_values=previous_values_str,

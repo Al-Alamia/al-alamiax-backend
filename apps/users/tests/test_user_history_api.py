@@ -41,8 +41,9 @@ class UserHistoryApiTests(BaseUserTestCase):
         self.patch(title="T")
         self.agent.refresh_from_db()
         self.agent.save()  # touches updated_at
-        fields = {c["field"] for e in self.client.get(self.url(self.agent)).data["results"]
-                  for c in e["changes"]}
+        entries = self.client.get(self.url(self.agent)).data["results"]
+        self.assertTrue(all(e["changes"] for e in entries))
+        fields = {c["field"] for e in entries for c in e["changes"]}
         self.assertIn("title", fields)
         self.assertFalse(fields & {"password", "last_login", "updated_at", "created_at"})
         self.assertFalse([f for f in fields if "password" in f])
@@ -103,3 +104,18 @@ class UserHistoryApiTests(BaseUserTestCase):
         self.authenticate_as(self.agent)
         self.assertEqual(self.client.get(self.url(self.agent)).status_code, 403)
         self.assertEqual(self.client.get(self.url(self.hr)).status_code, 404)
+
+    def test_login_only_save_creates_no_entry(self):
+        from django.utils import timezone
+        self.agent.last_login = timezone.now()
+        self.agent.save()
+        self.agent.save()  # no-op
+        self.assertEqual(UpdateHistory.objects.count(), 0)
+        self.authenticate_as(self.hr)
+        self.patch(title="X")
+        self.assertEqual(self.client.get(self.url(self.agent)).data["count"], 1)
+
+    def test_real_change_still_recorded(self):
+        self.agent.title = "Changed"
+        self.agent.save()
+        self.assertEqual(UpdateHistory.objects.count(), 1)
