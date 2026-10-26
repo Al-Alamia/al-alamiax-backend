@@ -5,6 +5,7 @@ from apps.notifications.services import notify
 from apps.notifications.types import NotificationKinds
 from apps.users.admin_permissions import can_manage_devices, device_approvers
 from apps.users.models import FingerPrintID
+from apps.users.services.users import revoke_refresh_tokens
 from apps.users.types import DeviceStatus
 
 MAX_PENDING_DEVICES = 3
@@ -104,7 +105,9 @@ def reject_device(actor, device):
 def revoke_device(actor, device):
     _check_manage(actor, device)
     setattr(device, "__by", actor)
-    device.delete()
+    with transaction.atomic():
+        device.delete()
+        revoke_refresh_tokens(device.user)
 
 
 def rename_device(actor, device, name):

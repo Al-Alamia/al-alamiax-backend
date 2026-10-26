@@ -14,7 +14,7 @@ from apps.users.serializers.admin import detail, list_item, option, user_name
 from apps.users.services.users import UserAdminError, create_user, set_active, update_user
 from apps.users.views.pagination import DefaultPagination
 
-MAX_OPTIONS = 200
+MAX_OPTIONS = 1000
 SEARCH_FIELDS = ("username", "first_name", "last_name", "crm_username")
 
 

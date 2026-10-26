@@ -5,6 +5,7 @@ from django.conf import settings
 
 from apps.attendance.models import WebPunchPolicy
 from apps.users.models import FingerPrintID
+from apps.users.types import DeviceStatus
 
 
 def client_ip(request) -> str:
@@ -44,7 +45,8 @@ def check(user, unique_id: Optional[str], ip: str) -> Optional[str]:
     if policy is None:
         return None
     if policy.require_trusted_device:
-        if not unique_id or not FingerPrintID.objects.filter(user=user, unique_id=unique_id).exists():
+        if not unique_id or not FingerPrintID.objects.filter(
+                user=user, unique_id=unique_id, status=DeviceStatus.APPROVED).exists():
             return "untrusted_device"
     if policy.require_office_ip and not _ip_allowed(ip, policy.allowed_ips):
         return "ip_not_allowed"

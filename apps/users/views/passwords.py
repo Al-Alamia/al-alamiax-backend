@@ -25,6 +25,9 @@ def change_password(request):
         return Response({"message": "old_password and new_password are required"}, HTTP_400_BAD_REQUEST)
     if not request.user.check_password(old_password):
         return Response({"message": "Old password is incorrect"}, HTTP_400_BAD_REQUEST)
+    if request.user.check_password(new_password):
+        return Response({"message": "New password must differ from the current password",
+                         "type": "same_password"}, HTTP_400_BAD_REQUEST)
     error = _invalid_new_password(new_password)
     if error:
         return Response({"message": error}, HTTP_400_BAD_REQUEST)

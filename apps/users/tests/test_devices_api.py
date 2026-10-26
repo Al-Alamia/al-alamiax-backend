@@ -96,6 +96,15 @@ class DevicesApiTests(BaseUserTestCase):
         self.assertEqual(self.client.delete(url).status_code, 204)
         self.assertFalse(FingerPrintID.objects.filter(pk=self.fingerprint.pk).exists())
 
+    def test_revoke_blacklists_refresh_tokens(self):
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+        from rest_framework_simplejwt.tokens import RefreshToken
+        refresh = RefreshToken.for_user(self.agent)
+        self.authenticate_as(self.hr)
+        r = self.client.delete(f"/api/users/devices/{self.fingerprint.uuid}")
+        self.assertEqual(r.status_code, 204)
+        self.assertTrue(BlacklistedToken.objects.filter(token__jti=refresh["jti"]).exists())
+
     def test_invisible_device_404(self):
         self.authenticate_as(self.manager)
         for method, url in (("post", f"/api/users/devices/{self.out_pending.uuid}/approve"),

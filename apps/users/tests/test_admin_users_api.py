@@ -96,9 +96,9 @@ class ListTests(AdminUsersTestBase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(set(r.data[0]), {"uuid", "name", "username", "role", "department"})
         self.assertNotIn("owner1", {o["username"] for o in r.data})
-        for i in range(205):
+        for i in range(1005):
             make_user(f"bulk{i}")
-        self.assertEqual(len(self.client.get(BASE + "/options").data), 200)
+        self.assertEqual(len(self.client.get(BASE + "/options").data), 1000)
 
 
 class CreateTests(AdminUsersTestBase):
@@ -178,6 +178,16 @@ class DetailTests(AdminUsersTestBase):
             "edit", "deactivate", "manage_devices", "view_devices", "view_files", "manage_files",
             "view_history", "reset_password"})
         self.assertTrue(r.data["can"]["reset_password"])
+
+    def test_basic_salary_hidden_from_non_managing_viewer(self):
+        from apps.commission.models import UserCommissionDetails
+        UserCommissionDetails.objects.update_or_create(user=self.agent, defaults={"basic": 4000})
+        self.authenticate_as(self.manager)
+        r = self.client.get(f"{BASE}/{self.agent.uuid}")
+        self.assertEqual(r.status_code, 200)
+        self.assertIsNone(r.data["basic_salary"])
+        self.authenticate_as(self.hr)
+        self.assertEqual(float(self.client.get(f"{BASE}/{self.agent.uuid}").data["basic_salary"]), 4000)
 
     def test_detail_404_for_invisible(self):
         self.authenticate_as(self.hr)

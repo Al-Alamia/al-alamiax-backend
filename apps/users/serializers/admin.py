@@ -55,7 +55,7 @@ def detail(request, user) -> dict:
         "phone": profile.phone if profile else None,
         "telegram_id": profile.telegram_id if profile else None,
         "about": profile.about if profile else "",
-        "basic_salary": basic or 0,
+        "basic_salary": (basic or 0) if (viewer.pk == user.pk or can_manage_user(viewer, user)) else None,
         "date_joined": user.date_joined, "last_login": user.last_login,
         "assignable_roles": assignable_roles(viewer),
     })

@@ -25,6 +25,11 @@ class ChangePasswordTests(BaseUserTestCase):
         self.agent.refresh_from_db()
         self.assertTrue(self.agent.check_password("newpass1"))
 
+    def test_same_password_rejected(self):
+        res = self.client.post(CHANGE, {"old_password": "pass123", "new_password": "pass123"}, format="json")
+        self.assertEqual(res.status_code, 400)
+        self.assertEqual(res.data["type"], "same_password")
+
     def test_wrong_old(self):
         res = self.client.post(CHANGE, {"old_password": "bad", "new_password": "newpass1"}, format="json")
         self.assertEqual(res.status_code, 400)

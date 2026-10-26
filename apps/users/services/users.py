@@ -154,6 +154,12 @@ def update_user(actor, user, data) -> User:
     return user
 
 
+def revoke_refresh_tokens(user) -> None:
+    """Blacklist every outstanding refresh token so the user's sessions end."""
+    for token in OutstandingToken.objects.filter(user=user):
+        BlacklistedToken.objects.get_or_create(token=token)
+
+
 def set_active(actor, user, active: bool) -> User:
     if not can_manage_user(actor, user):
         raise UserAdminError("forbidden", "You are not allowed to change this user.", 403)
@@ -164,6 +170,5 @@ def set_active(actor, user, active: bool) -> User:
         setattr(user, "__by", actor)
         user.save()
         if not active:
-            for token in OutstandingToken.objects.filter(user=user):
-                BlacklistedToken.objects.get_or_create(token=token)
+            revoke_refresh_tokens(user)
     return user
