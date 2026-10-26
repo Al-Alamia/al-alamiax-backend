@@ -101,3 +101,25 @@ class ProfileApiTests(BaseUserTestCase):
         r = self.client.patch(URL, {"about": "x"}, format="json", **auth)
         self.assertEqual(r.status_code, 403)
         self.assertEqual(r.json()["type"], "password_change_required")
+
+    def test_stored_extension_comes_from_detected_type(self):
+        r = self.client.patch(URL, {"picture": SimpleUploadedFile("evil.html", PNG)}, format="multipart")
+        self.assertEqual(r.status_code, 200)
+        self.agent.profile.refresh_from_db()
+        self.assertTrue(self.agent.profile.picture.name.endswith(".png"))
+
+    def test_replaced_picture_file_deleted(self):
+        self.client.patch(URL, {"picture": SimpleUploadedFile("a.png", PNG)}, format="multipart")
+        self.agent.profile.refresh_from_db()
+        old = self.agent.profile.picture.name
+        storage = self.agent.profile.picture.storage
+        self.assertTrue(storage.exists(old))
+        self.client.patch(URL, {"picture": SimpleUploadedFile("b.jpg", JPEG)}, format="multipart")
+        self.agent.profile.refresh_from_db()
+        self.assertNotEqual(self.agent.profile.picture.name, old)
+        self.assertFalse(storage.exists(old))
+        self.assertTrue(storage.exists(self.agent.profile.picture.name))
+
+    def test_non_object_json_body_400(self):
+        r = self.client.patch(URL, [1, 2], format="json")
+        self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))

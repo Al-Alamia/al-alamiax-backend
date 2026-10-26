@@ -12,9 +12,15 @@ MAX_PICTURE_BYTES = 5 * 1024 * 1024
 MAX_ABOUT = 2000
 
 
-def _is_image(head: bytes) -> bool:
-    return (head.startswith(b"\xff\xd8\xff") or head.startswith(b"\x89PNG\r\n\x1a\n")
-            or (head[:4] == b"RIFF" and head[8:12] == b"WEBP"))
+def _image_ext(head: bytes):
+    """Extension for the detected image type, or None."""
+    if head.startswith(b"\xff\xd8\xff"):
+        return "jpg"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "webp"
+    return None
 
 
 def profile_json(request, profile) -> dict:
@@ -76,8 +82,10 @@ def me_profile(request):
                 return error("The picture must be 5 MB or smaller.", "file_too_large", 400)
             head = picture.read(12)
             picture.seek(0)
-            if not _is_image(head):
+            ext = _image_ext(head)
+            if ext is None:
                 return error("The picture must be a JPEG, PNG or WEBP image.", "file_type", 400)
+            picture.name = f"picture.{ext}"  # never trust the client's extension
         try:
             values = {}
             if "phone" in data:
@@ -90,8 +98,11 @@ def me_profile(request):
             return error(str(exc), "invalid", 400)
         for name, value in values.items():
             setattr(profile, name, value)
+        old_picture = profile.picture.name if profile.picture else None
         if picture is not None:
             profile.picture = picture
         setattr(profile, "__by", user)
         profile.save()
+        if picture is not None and old_picture and old_picture != profile.picture.name:
+            profile.picture.storage.delete(old_picture)
     return Response(profile_json(request, profile))
