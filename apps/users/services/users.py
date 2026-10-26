@@ -74,7 +74,7 @@ def _check_unique(username, fp_id, exclude=None):
 def _basic_salary(raw):
     if raw in (None, ""):
         return 0
-    if isinstance(raw, bool) or not isinstance(raw, (int, str)) or not str(raw).strip().isdigit():
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)) or not (str(raw).strip().isascii() and str(raw).strip().isdecimal()):
         raise UserAdminError("invalid", "'basic_salary' must be a non-negative integer.")
     value = int(raw)
     if value > MAX_BASIC_SALARY:
@@ -127,7 +127,9 @@ def update_user(actor, user, data) -> User:
     values = {}
     for name in ("first_name", "last_name", "username", "title", "crm_username", "fp_id"):
         if name in data:
-            values[name] = _text(data, name, required=name in ("username", "title"))
+            values[name] = _text(data, name, required=name == "username")
+    if "title" in values and not values["title"]:  # same as create: blank falls back to the model default
+        values["title"] = User._meta.get_field("title").get_default()
     if "role" in data:
         role = data["role"]
         if role != user.role:

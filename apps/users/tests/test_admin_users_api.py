@@ -146,7 +146,7 @@ class CreateTests(AdminUsersTestBase):
 
     def test_bad_basic_salary_invalid(self):
         self.authenticate_as(self.hr)
-        for bad in (-1, "abc", 1.5, True):
+        for bad in (-1, "abc", 1.5, True, "²", "٣"):
             r = self.client.post(BASE, self.payload(basic_salary=bad), format="json")
             self.assertEqual(r.status_code, 400, bad)
 
@@ -287,3 +287,12 @@ class ActiveTests(AdminUsersTestBase):
     def test_old_route_removed(self):
         self.authenticate_as(self.hr)
         self.assertEqual(self.client.get("/api/users/user").status_code, 404)
+
+
+class PatchTitleTests(AdminUsersTestBase):
+    def test_blank_title_falls_back_to_default_like_create(self):
+        self.authenticate_as(self.hr)
+        r = self.client.patch(f"{BASE}/{self.agent.uuid}", {"title": "  "}, format="json")
+        self.assertEqual((r.status_code, r.data["title"]), (200, "Agent"))
+        r = self.client.post(BASE, self.payload(title=""), format="json")
+        self.assertEqual((r.status_code, r.data["title"]), (201, "Agent"))
