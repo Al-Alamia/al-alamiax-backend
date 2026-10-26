@@ -61,3 +61,16 @@ class LeadUpdateTypes (models.TextChoices):
     HIDDEN = ("hidden", "Hidden")
     UNHIDDEN = ("unhidden", "Unhidden")
     NOTE = ("note", "Note")
+
+
+class DeviceStatus(models.TextChoices):
+    PENDING = ("pending", "Pending")
+    APPROVED = ("approved", "Approved")
+    REJECTED = ("rejected", "Rejected")
+
+
+class FileCategory(models.TextChoices):
+    CONTRACT = ("contract", "Contract")
+    ID = ("id", "ID")
+    CERTIFICATE = ("certificate", "Certificate")
+    OTHER = ("other", "Other")

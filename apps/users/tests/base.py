@@ -53,6 +53,7 @@ class BaseUserTestCase(APITestCase):
         self.fingerprint = FingerPrintID.objects.create(
             user=self.agent,
             unique_id="test-device-id",
+            status="approved",
             name="Test PC"
         )
 

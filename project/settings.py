@@ -184,6 +184,7 @@ STATIC_ROOT = os.environ.get('DJANGO_STATIC_ROOT', os.path.join(BASE_DIR, 'stati
 # Media files Configuration (Images)
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR,"media")
+PRIVATE_MEDIA_ROOT = os.path.join(BASE_DIR, "private_media")
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/3.2/ref/settings/#default-auto-field

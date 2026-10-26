@@ -171,3 +171,5 @@ src/runner.bat
 node_modules/
 .vscode/
 Exports/
+# private uploaded files
+private_media/

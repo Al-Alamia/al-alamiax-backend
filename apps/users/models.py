@@ -7,11 +7,14 @@ from .managers import (
         ManagerObjects ,
         OwnerObjects
     )
-from .types import UserTypes , DepartmentCodes , StockMarkets , LeadStatuses , CallStatuses , AssignmentKinds , LeadUpdateTypes
+from .types import UserTypes , DepartmentCodes , StockMarkets , LeadStatuses , CallStatuses , AssignmentKinds , LeadUpdateTypes , DeviceStatus , FileCategory
+from .storage import private_storage
 from utils.models_utils import image_upload_path , validate_lead_number , validate_role , validate_user_number
 from django.db.models.signals import pre_save , post_save , post_delete
 from core.models import BaseModel
 import json
+import os
+import uuid
 import logging
 from django.utils.timezone import now
 from django.urls import reverse
@@ -54,6 +57,7 @@ class User(AbstractUser , BaseModel):
     department = models.ForeignKey( Department,verbose_name="Department", on_delete=models.SET_NULL, null=True)
     crm_username = models.CharField(max_length=200 , verbose_name="CRM Username" , blank=True  )
     fp_id = models.CharField(verbose_name="Figner Print ID",max_length=200 , unique=False,blank=True)
+    must_change_password = models.BooleanField(verbose_name="Must Change Password", default=False)
     
     def __str__(self):
         return f"{self.username}"
@@ -69,8 +73,40 @@ class FingerPrintID(BaseModel):
     name = models.CharField(max_length=100 , verbose_name="Name" , default='PC')
     user = models.ForeignKey(User,verbose_name="User" , on_delete=models.CASCADE )
     unique_id = models.CharField(verbose_name="Unique ID", max_length=100)
+    status = models.CharField(verbose_name="Status", max_length=20, choices=DeviceStatus.choices, default=DeviceStatus.PENDING)
+    decided_by = models.ForeignKey(User, verbose_name="Decided By", on_delete=models.SET_NULL, null=True, blank=True, related_name="devices_decided")
+    decided_at = models.DateTimeField(verbose_name="Decided At", null=True, blank=True)
+    last_used_at = models.DateTimeField(verbose_name="Last Used At", null=True, blank=True)
+    user_agent = models.CharField(verbose_name="User Agent", max_length=255, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["user", "unique_id"], name="uniq_device_per_user"),
+        ]
+
     def __str__(self):
         return f"{self.name} - {self.user}"
+
+
+def user_file_upload_path(instance, filename):
+    ext = os.path.splitext(filename)[1].lower()
+    return f"user_files/{instance.user_id}/{uuid.uuid4().hex}{ext}"
+
+
+class UserFile(BaseModel):
+    user = models.ForeignKey(User, verbose_name="User", on_delete=models.CASCADE, related_name="files")
+    title = models.CharField(verbose_name="Title", max_length=150)
+    category = models.CharField(verbose_name="Category", max_length=20, choices=FileCategory.choices)
+    file = models.FileField(verbose_name="File", storage=private_storage, upload_to=user_file_upload_path)
+    size = models.PositiveIntegerField(verbose_name="Size")
+    content_type = models.CharField(verbose_name="Content Type", max_length=100)
+    uploaded_by = models.ForeignKey(User, verbose_name="Uploaded By", on_delete=models.SET_NULL, null=True, related_name="files_uploaded")
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.title} - {self.user}"
         
 
 class Profile(BaseModel):
@@ -149,6 +185,10 @@ class UpdateHistory(models.Model):
     class Meta:
         verbose_name = "Update History"
         verbose_name_plural = "Update Histories"
+        indexes = [
+            models.Index(fields=["model_name", "model_uuid"], name="updhist_model_idx"),
+            models.Index(fields=["user"], name="updhist_user_idx"),
+        ]
 
     def __str__(self):
         return f"{self.model_name} - {self.model_uuid} - {self.updated_at.date()}"
