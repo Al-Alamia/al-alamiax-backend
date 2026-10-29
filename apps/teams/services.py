@@ -174,7 +174,7 @@ def evaluate(version, value, american_share=None):
     rows = list(version.tiers.all())
     tiers = [{"variant": r.variant, "min_value": r.min_value, "max_value": r.max_value,
               "kind": r.kind, "value": r.value} for r in rows]
-    variant = _pick_variant(american_share, version.plan.american_threshold_percent)
+    variant = _pick_variant(american_share, version.american_threshold_percent)
     return _evaluate_variant(tiers, _dec(value), variant, rows)
 
 
@@ -218,17 +218,20 @@ def team_total(team, values_by_user_id):
     return sum((Decimal(values_by_user_id.get(i, 0)) for i in set(ids)), Decimal("0"))
 
 
-def save_version(plan, month, tiers, by, *, today=None):
+def save_version(plan, month, tiers, by, *, metric, threshold, today=None):
     from .models import PlanVersion, Tier
     month = month_start(month)
     if month < month_start(today or date.today()):
         raise PlanError("past_month", "Cannot change a plan for a past month.")
-    normalized = validate_tiers(tiers, plan.metric, plan.american_threshold_percent)
+    normalized = validate_tiers(tiers, metric, threshold)
     with transaction.atomic():
         version, created = PlanVersion.objects.get_or_create(
-            plan=plan, effective_from=month, defaults={"created_by": by})
+            plan=plan, effective_from=month,
+            defaults={"created_by": by, "metric": metric, "american_threshold_percent": threshold})
         if not created:
             version.tiers.all().delete()
+            version.metric, version.american_threshold_percent = metric, threshold
+            version.save(update_fields=["metric", "american_threshold_percent", "updated_at"])
         Tier.objects.bulk_create([Tier(version=version, **t) for t in normalized])
         if plan.kind == PlanKind.TEAM and plan.team.leader_id:
             notify([plan.team.leader],
@@ -239,6 +242,8 @@ def save_version(plan, month, tiers, by, *, today=None):
 
 
 def set_members(team, add, remove, by):
+    if {u.pk for u in add} & {u.pk for u in remove}:
+        raise PlanError("invalid", "A user cannot be both added and removed.")
     if team.leader_id and any(u.pk == team.leader_id for u in add):
         raise PlanError("leader_is_agent", "The team leader cannot also be an agent.")
     with transaction.atomic():

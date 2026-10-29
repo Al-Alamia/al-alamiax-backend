@@ -9,15 +9,13 @@ def make_team(department, name="T", leader=None, agents=()):
     return team
 
 
-def make_plan(kind, *, department=None, user=None, team=None, metric="lead_count", threshold=None):
-    return CommissionPlan.objects.create(
-        kind=kind, department=department, user=user, team=team,
-        metric=metric, american_threshold_percent=threshold,
-    )
+def make_plan(kind, *, department=None, user=None, team=None):
+    return CommissionPlan.objects.create(kind=kind, department=department, user=user, team=team)
 
 
-def make_version(plan, month, tiers):
-    version = PlanVersion.objects.create(plan=plan, effective_from=month)
+def make_version(plan, month, tiers, metric="lead_count", threshold=None):
+    version = PlanVersion.objects.create(
+        plan=plan, effective_from=month, metric=metric, american_threshold_percent=threshold)
     for t in tiers:
         Tier.objects.create(
             version=version, variant=t.get("variant", "normal"),

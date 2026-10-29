@@ -31,9 +31,6 @@ class CommissionPlan(BaseModel):
         User, on_delete=models.CASCADE, null=True, blank=True, related_name="commission_plans")
     team = models.ForeignKey(
         Team, on_delete=models.CASCADE, null=True, blank=True, related_name="commission_plans")
-    metric = models.CharField(max_length=15, choices=PlanMetric.choices)
-    american_threshold_percent = models.DecimalField(
-        max_digits=5, decimal_places=2, null=True, blank=True)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -57,12 +54,15 @@ class CommissionPlan(BaseModel):
         ]
 
     def __str__(self):
-        return f"{self.kind} plan ({self.metric})"
+        return f"{self.kind} plan"
 
 
 class PlanVersion(BaseModel):
     plan = models.ForeignKey(CommissionPlan, on_delete=models.CASCADE, related_name="versions")
     effective_from = models.DateField()
+    metric = models.CharField(max_length=15, choices=PlanMetric.choices)
+    american_threshold_percent = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True)
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
 

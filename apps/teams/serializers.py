@@ -43,8 +43,15 @@ def _target(plan) -> dict:
     return {"type": "team", "uuid": str(plan.team.uuid), "name": plan.team.name}
 
 
+def _threshold(version):
+    value = version.american_threshold_percent
+    return None if value is None else str(value)
+
+
 def version_data(version) -> dict:
     return {"effective_from": f"{version.effective_from:%Y-%m}",
+            "metric": version.metric,
+            "american_threshold_percent": _threshold(version),
             "tiers": [tier_data(t) for t in version.tiers.all()]}
 
 
@@ -54,9 +61,8 @@ def plan_data(plan, viewer, month) -> dict:
         "uuid": str(plan.uuid),
         "kind": plan.kind,
         "target": _target(plan),
-        "metric": plan.metric,
-        "american_threshold_percent": (
-            None if plan.american_threshold_percent is None else str(plan.american_threshold_percent)),
+        "metric": current.metric if current else None,
+        "american_threshold_percent": _threshold(current) if current else None,
         "is_active": plan.is_active,
         "current_version": version_data(current) if current else None,
         "versions": [f"{d:%Y-%m}" for d in

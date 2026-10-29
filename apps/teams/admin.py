@@ -20,7 +20,7 @@ class PlanVersionInline(admin.TabularInline):
 
 @admin.register(CommissionPlan)
 class CommissionPlanAdmin(admin.ModelAdmin):
-    list_display = ["kind", "metric", "department", "user", "team", "is_active"]
-    list_filter = ["kind", "metric", "is_active"]
+    list_display = ["kind", "department", "user", "team", "is_active"]
+    list_filter = ["kind", "is_active"]
     raw_id_fields = ["user", "team"]
     inlines = [PlanVersionInline]

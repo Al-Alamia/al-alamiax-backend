@@ -150,6 +150,13 @@ class DetailTests(TeamsApiBase):
         r = self.send("patch", self.sales_mgr, self.url(self.sales_team), {"name": "sales team"})
         self.assertEqual(r.status_code, 200)
 
+    def test_patch_leader_falsy_values_rejected(self):
+        for bad in (0, False, ""):
+            r = self.send("patch", self.sales_mgr, self.url(self.sales_team), {"leader": bad})
+            self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"), bad)
+        self.sales_team.refresh_from_db()
+        self.assertEqual(self.sales_team.leader, self.leader)
+
     def test_patch_leader_set_and_clear(self):
         r = self.send("patch", self.sales_mgr, self.url(self.sales_team), {"leader": str(self.a1.uuid)})
         self.assertEqual(r.data["leader"]["uuid"], str(self.a1.uuid))
@@ -162,6 +169,12 @@ class DetailTests(TeamsApiBase):
         self.assertEqual(r.status_code, 403)
         r = self.send("patch", self.owner, self.url(self.sales_team), {"department": str(self.mkt.uuid)})
         self.assertEqual(r.data["department"]["name"], "Marketing")
+
+    def test_delete_archives_team_plan(self):
+        plan = make_plan(PlanKind.TEAM, team=self.sales_team)
+        self.send("delete", self.sales_mgr, self.url(self.sales_team))
+        plan.refresh_from_db()
+        self.assertFalse(plan.is_active)
 
     def test_delete_archives(self):
         r = self.send("delete", self.sales_mgr, self.url(self.sales_team))
@@ -209,6 +222,12 @@ class MembersTests(TeamsApiBase):
                       {"add": [str(self.a2.uuid), str(self.hr.uuid)]})
         self.assertEqual(len(r.data["agents"]), 3)
 
+    def test_add_and_remove_same_user_rejected(self):
+        r = self.send("post", self.sales_mgr, self.url(self.sales_team, "/members"),
+                      {"add": [str(self.a2.uuid)], "remove": [str(self.a2.uuid)]})
+        self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))
+        self.assertFalse(self.sales_team.agents.filter(pk=self.a2.pk).exists())
+
     def test_leader_is_agent(self):
         r = self.send("post", self.sales_mgr, self.url(self.sales_team, "/members"),
                       {"add": [str(self.leader.uuid)]})
@@ -255,7 +274,8 @@ class MetaMyTests(TeamsApiBase):
         self.assertEqual([p["uuid"] for p in r.data["team_plans"]], [str(tp.uuid)])
         plan = r.data["team_plans"][0]
         self.assertEqual(plan["versions"], ["2020-06", "2020-01"])
-        self.assertEqual(plan["current_version"], {"effective_from": "2020-06", "tiers": [
+        self.assertEqual(plan["current_version"], {"effective_from": "2020-06", "metric": "lead_count",
+            "american_threshold_percent": None, "tiers": [
             {"variant": "normal", "min_value": "0.00", "max_value": None, "kind": "flat", "value": "100.00"}]})
 
     def test_my_member_and_no_plan(self):

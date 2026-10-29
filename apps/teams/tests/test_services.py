@@ -98,23 +98,23 @@ class SaveVersionTests(TestCase):
 
     def test_past_month_rejected(self):
         with self.assertRaises(PlanError) as cm:
-            services.save_version(self.plan, date(2026, 10, 1), FLAT, self.by, today=self.today)
+            services.save_version(self.plan, date(2026, 10, 1), FLAT, self.by, metric="lead_count", threshold=None, today=self.today)
         self.assertEqual(cm.exception.code, "past_month")
 
     def test_same_month_replaces_tiers(self):
-        services.save_version(self.plan, date(2026, 11, 1), FLAT, self.by, today=self.today)
-        v = services.save_version(self.plan, date(2026, 11, 20), FLAT2, self.by, today=self.today)
+        services.save_version(self.plan, date(2026, 11, 1), FLAT, self.by, metric="lead_count", threshold=None, today=self.today)
+        v = services.save_version(self.plan, date(2026, 11, 20), FLAT2, self.by, metric="lead_count", threshold=None, today=self.today)
         self.assertEqual(PlanVersion.objects.filter(plan=self.plan).count(), 1)
         self.assertEqual([t.value for t in v.tiers.all()], [Decimal("250")])
 
     def test_future_month_creates_new_version(self):
-        services.save_version(self.plan, date(2026, 11, 1), FLAT, self.by, today=self.today)
-        v = services.save_version(self.plan, date(2026, 12, 1), FLAT2, self.by, today=self.today)
+        services.save_version(self.plan, date(2026, 11, 1), FLAT, self.by, metric="lead_count", threshold=None, today=self.today)
+        v = services.save_version(self.plan, date(2026, 12, 1), FLAT2, self.by, metric="lead_count", threshold=None, today=self.today)
         self.assertEqual(v.effective_from, date(2026, 12, 1))
         self.assertEqual(PlanVersion.objects.filter(plan=self.plan).count(), 2)
 
     def test_team_plan_notifies_leader_once(self):
-        services.save_version(self.plan, date(2026, 11, 1), FLAT, self.by, today=self.today)
+        services.save_version(self.plan, date(2026, 11, 1), FLAT, self.by, metric="lead_count", threshold=None, today=self.today)
         n = Notification.objects.get()
         self.assertEqual(n.kind, "team")
         self.assertTrue(n.link.startswith("/teams?tab=plans&plan="))
@@ -123,12 +123,12 @@ class SaveVersionTests(TestCase):
 
     def test_personal_plan_does_not_notify(self):
         p = make_plan(PlanKind.PERSONAL, department=self.dept)
-        services.save_version(p, date(2026, 11, 1), FLAT, self.by, today=self.today)
+        services.save_version(p, date(2026, 11, 1), FLAT, self.by, metric="lead_count", threshold=None, today=self.today)
         self.assertEqual(Notification.objects.count(), 0)
 
     def test_invalid_tiers_leave_db_unchanged(self):
         with self.assertRaises(PlanError) as cm:
-            services.save_version(self.plan, date(2026, 11, 1), [], self.by, today=self.today)
+            services.save_version(self.plan, date(2026, 11, 1), [], self.by, metric="lead_count", threshold=None, today=self.today)
         self.assertEqual(cm.exception.code, "invalid_tiers")
         self.assertEqual(PlanVersion.objects.count(), 0)
         self.assertEqual(Notification.objects.count(), 0)

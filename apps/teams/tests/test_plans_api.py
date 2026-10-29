@@ -22,6 +22,11 @@ def tier(min_, max_, kind, value, variant="normal"):
 TIERS = [tier(0, 99, "flat", 0), tier(100, 199, "unit", 10), tier(200, None, "unit", 15)]
 
 
+def _first(offset=0):
+    y, m = map(int, month(offset).split("-"))
+    return date(y, m, 1)
+
+
 def month(offset=0):
     total = date.today().year * 12 + date.today().month - 1 + offset
     return f"{total // 12:04d}-{total % 12 + 1:02d}"
@@ -134,8 +139,8 @@ class CreateTests(PlansBase):
         self.assertEqual(r.status_code, 403)
 
     def test_post_reactivates_archived_plan(self):
-        plan = make_plan(PlanKind.PERSONAL, department=self.sales, metric="deal_count")
-        make_version(plan, date.today().replace(day=1), [tier(0, None, "flat", 1)])
+        plan = make_plan(PlanKind.PERSONAL, department=self.sales)
+        make_version(plan, date(2020, 1, 1), [tier(0, None, "flat", 1)], metric="deal_count")
         plan.is_active = False
         plan.save()
         r = self.post_plan(self.smgr, department=str(self.sales.uuid), metric="lead_count")
@@ -143,7 +148,9 @@ class CreateTests(PlansBase):
         self.assertEqual(r.data["uuid"], str(plan.uuid))
         self.assertTrue(r.data["is_active"])
         self.assertEqual(r.data["metric"], "lead_count")
+        self.assertEqual(r.data["current_version"]["metric"], "lead_count")
         self.assertEqual(len(r.data["current_version"]["tiers"]), 3)
+        self.assertEqual(plan.versions.get(effective_from=date(2020, 1, 1)).metric, "deal_count")
         self.assertEqual(CommissionPlan.objects.count(), 1)
 
     def test_reactivation_failure_rolls_back(self):
@@ -228,16 +235,44 @@ class DetailTests(PlansBase):
                 "tiers": [tier(0, "99.99", "percent", 1), tier("100.00", None, "percent", 2)]}
         r = self.send("patch", self.smgr, self.url(self.plan), body)
         self.assertEqual(r.status_code, 200, r.data)
-        self.plan.refresh_from_db()
-        self.assertEqual(self.plan.metric, "sales_amount")
+        self.assertEqual(r.data["metric"], "lead_count")  # current month version untouched
+        self.assertEqual(self.plan.versions.get(effective_from=_first(1)).metric, "sales_amount")
         self.assertEqual(self.plan.versions.count(), 2)
 
     def test_patch_invalid_tiers_rolls_back(self):
         body = {"metric": "sales_amount", "effective_from": month(1), "tiers": [tier(0, 9, "flat", 1)] * 2}
         r = self.send("patch", self.smgr, self.url(self.plan), body)
         self.assertEqual((r.status_code, r.data["type"]), (400, "invalid_tiers"))
-        self.plan.refresh_from_db()
-        self.assertEqual(self.plan.metric, "lead_count")
+        self.assertEqual(self.plan.versions.count(), 1)
+
+    def test_metric_change_leaves_past_version_unchanged(self):
+        from apps.teams.services import evaluate
+        current = self.plan.versions.get()
+        before = evaluate(current, 5).amount
+        body = {"metric": "sales_amount", "effective_from": month(1),
+                "tiers": [tier(0, "99.99", "percent", 1), tier("100.00", None, "percent", 2)]}
+        self.assertEqual(self.send("patch", self.smgr, self.url(self.plan), body).status_code, 200)
+        current.refresh_from_db()
+        self.assertEqual(current.metric, "lead_count")
+        self.assertEqual(evaluate(current, 5).amount, before)
+        r = self.send("get", self.smgr, self.url(self.plan, f"/versions/{month()}"))
+        self.assertEqual(r.data["metric"], "lead_count")
+        r = self.send("get", self.smgr, self.url(self.plan, f"/versions/{month(1)}"))
+        self.assertEqual(r.data["metric"], "sales_amount")
+
+    def test_put_without_metric_carries_over(self):
+        american = TIERS + [tier(0, None, "flat", 5, "american")]
+        plan = make_plan(PlanKind.PERSONAL, user=self.leader)
+        make_version(plan, _first(0), american, metric="lead_count", threshold="40.00")
+        r = self.send("put", self.smgr, self.url(plan, f"/versions/{month(1)}"), {"tiers": american})
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual((r.data["metric"], r.data["american_threshold_percent"]),
+                         ("lead_count", "40.00"))
+
+    def test_put_without_metric_and_no_prior_version_invalid(self):
+        plan = make_plan(PlanKind.PERSONAL, user=self.leader)
+        r = self.send("put", self.smgr, self.url(plan, f"/versions/{month(1)}"), {"tiers": TIERS})
+        self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))
 
     def test_patch_metric_alone_invalid(self):
         r = self.send("patch", self.smgr, self.url(self.plan), {"metric": "sales_amount"})
@@ -257,9 +292,9 @@ class DetailTests(PlansBase):
         self.assertEqual(self.send("patch", self.mmgr, self.url(self.plan), body).status_code, 404)
 
     def test_patch_keeps_stored_threshold(self):
-        plan = make_plan(PlanKind.PERSONAL, user=self.leader, threshold="40.00")
+        plan = make_plan(PlanKind.PERSONAL, user=self.leader)
         american = TIERS + [tier(0, None, "flat", 5, "american")]
-        make_version(plan, date.today().replace(day=1), american)
+        make_version(plan, date.today().replace(day=1), american, threshold="40.00")
         body = {"metric": "lead_count", "effective_from": month(1), "tiers": american}
         r = self.send("patch", self.smgr, self.url(plan), body)
         self.assertEqual(r.status_code, 200, r.data)
