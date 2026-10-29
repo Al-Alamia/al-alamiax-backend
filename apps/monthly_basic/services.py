@@ -212,6 +212,11 @@ def _clean_inputs(data):
     return clean
 
 
+def _assert_open(key, start, end):
+    if closed_period_for(start, end) is not None:
+        raise BasicError("period_closed", f"Payroll period {key} is closed.")
+
+
 def _target(actor, user, key, today, *, check_included=True):
     """Common guards for edit/give/ungive; returns nothing, raises BasicError."""
     if not can_manage_basic(actor, user):
@@ -222,8 +227,7 @@ def _target(actor, user, key, today, *, check_included=True):
     month_of(key)
     if start > _today(today):
         raise BasicError("future_period", "The period has not started yet.")
-    if closed_period_for(start, end) is not None:
-        raise BasicError("period_closed", f"Payroll period {key} is closed.")
+    _assert_open(key, start, end)
     if check_included and not included_users(key).filter(pk=user.pk).exists():
         raise BasicError("not_included", "The user has no basic salary for this period.")
     return start, end
@@ -238,10 +242,11 @@ def _locked(user, key, create=False):
 
 
 def update_inputs(actor, user, key, data, *, today=None):
-    _target(actor, user, key, today)
+    start, end = _target(actor, user, key, today)
     clean = _clean_inputs(data)
     with transaction.atomic():
         record = _locked(user, key, create=True)
+        _assert_open(key, start, end)
         if record.status == BasicStatus.GIVEN:
             raise BasicError("already_given", "The record is already given.")
         for f, v in clean.items():
@@ -256,11 +261,12 @@ def update_inputs(actor, user, key, data, *, today=None):
 
 
 def give(actor, user, key, *, today=None):
-    _, end = _target(actor, user, key, today)
+    start, end = _target(actor, user, key, today)
     if _today(today) < end:
         raise BasicError("period_open", "The period has not ended yet.")
     with transaction.atomic():
         record = _locked(user, key, create=True)
+        _assert_open(key, start, end)
         if record.status == BasicStatus.GIVEN:
             raise BasicError("already_given", "The record is already given.")
         values = compute(user, key, record)
@@ -277,9 +283,10 @@ def give(actor, user, key, *, today=None):
 
 
 def ungive(actor, user, key):
-    _target(actor, user, key, None, check_included=False)
+    start, end = _target(actor, user, key, None, check_included=False)
     with transaction.atomic():
         record = _locked(user, key)
+        _assert_open(key, start, end)
         if record is None or record.status != BasicStatus.GIVEN:
             raise BasicError("not_given", "The record is not given.")
         for f in SNAPSHOT_FIELDS:

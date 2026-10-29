@@ -98,6 +98,13 @@ class ActionTests(BaseUserTestCase):
         make_basic(self.owner, date(2026, 10, 1), 2000)
         self.assertErr("forbidden", self.upd, {"kpi": "1"}, user=self.hr, actor=self.hr)
         self.assertErr("not_found", self.upd, {"kpi": "1"}, user=self.hr, actor=self.agent)
+        # OWNER passes the permission gate on own record; owners are never payroll-included,
+        # so the first failure is not_included (not forbidden/not_found).
+        self.assertErr("not_included", self.upd, {"kpi": "5"}, user=self.owner, actor=self.owner)
+
+    def test_negative_adjustment_accepted(self):
+        rec = self.upd({"days_adjustment": "-0.5", "days_adjustment_note": "bonus day"})
+        self.assertEqual(rec.days_adjustment, D("-0.5"))
 
     def test_close_requires_all_given(self):
         a2 = User.objects.create_user(username="a2", password="x", role=UserTypes.AGENT, department=self.department)
