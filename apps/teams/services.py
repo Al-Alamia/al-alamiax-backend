@@ -1,7 +1,13 @@
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
-from .types import PlanMetric, TierKind, TierVariant
+from django.db import transaction
+
+from apps.notifications.services import notify
+from apps.notifications.types import NotificationKinds
+
+from .types import PlanKind, PlanMetric, TierKind, TierVariant
 
 MAX_TIERS_PER_VARIANT = 20
 CENT = Decimal("0.01")
@@ -170,3 +176,86 @@ def evaluate(version, value, american_share=None):
               "kind": r.kind, "value": r.value} for r in rows]
     variant = _pick_variant(american_share, version.plan.american_threshold_percent)
     return _evaluate_variant(tiers, _dec(value), variant, rows)
+
+
+def month_start(d):
+    return d.replace(day=1)
+
+
+def version_for(plan, month):
+    return (plan.versions.filter(effective_from__lte=month_start(month))
+            .order_by("-effective_from").first())
+
+
+def _active_plan_version(month, **target):
+    from .models import CommissionPlan
+    plan = CommissionPlan.objects.filter(is_active=True, **target).first()
+    return version_for(plan, month) if plan else None
+
+
+def personal_version_for(user, month):
+    version = _active_plan_version(month, kind=PlanKind.PERSONAL, user=user)
+    if version is None and user.department_id:
+        version = _active_plan_version(
+            month, kind=PlanKind.PERSONAL, department_id=user.department_id)
+    return version
+
+
+def team_versions_for_leader(user, month):
+    from .models import Team
+    result = []
+    for team in Team.objects.filter(leader=user, is_active=True).order_by("name"):
+        version = _active_plan_version(month, kind=PlanKind.TEAM, team=team)
+        if version is not None:
+            result.append((team, version))
+    return result
+
+
+def team_total(team, values_by_user_id):
+    ids = list(team.agents.values_list("pk", flat=True))
+    if team.include_leader_in_total and team.leader_id:
+        ids.append(team.leader_id)
+    return sum((Decimal(values_by_user_id.get(i, 0)) for i in set(ids)), Decimal("0"))
+
+
+def save_version(plan, month, tiers, by, *, today=None):
+    from .models import PlanVersion, Tier
+    month = month_start(month)
+    if month < month_start(today or date.today()):
+        raise PlanError("past_month", "Cannot change a plan for a past month.")
+    normalized = validate_tiers(tiers, plan.metric, plan.american_threshold_percent)
+    with transaction.atomic():
+        version, created = PlanVersion.objects.get_or_create(
+            plan=plan, effective_from=month, defaults={"created_by": by})
+        if not created:
+            version.tiers.all().delete()
+        Tier.objects.bulk_create([Tier(version=version, **t) for t in normalized])
+        if plan.kind == PlanKind.TEAM and plan.team.leader_id:
+            notify([plan.team.leader],
+                   f"The commission plan of team {plan.team.name} was updated ({month:%Y-%m}).",
+                   kind=NotificationKinds.TEAM, title="Team plan",
+                   link=f"/teams?tab=plans&plan={plan.uuid}", sender=by)
+    return version
+
+
+def set_members(team, add, remove, by):
+    if team.leader_id and any(u.pk == team.leader_id for u in add):
+        raise PlanError("leader_is_agent", "The team leader cannot also be an agent.")
+    with transaction.atomic():
+        existing = set(team.agents.values_list("pk", flat=True))
+        new_agents = [u for u in dict.fromkeys(add) if u.pk not in existing]
+        team.agents.add(*add)
+        team.agents.remove(*remove)
+        if new_agents:
+            notify(new_agents, f"You were added to team {team.name}.",
+                   kind=NotificationKinds.TEAM, title="Team", link="/teams", sender=by)
+    return team
+
+
+def set_leader(team, user, by):
+    with transaction.atomic():
+        team.leader = user
+        team.save(update_fields=["leader", "updated_at"])
+        if user is not None:
+            team.agents.remove(user)
+    return team
