@@ -6,6 +6,7 @@ from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
 from apps.attendance.models import AttendanceSettings
+from apps.attendance.services.locks import closed_period_for
 from apps.attendance.services.periods import period_range
 from apps.notifications.services import notify
 from apps.notifications.types import NotificationKinds
@@ -44,6 +45,12 @@ def _validate_value(kind, value) -> None:
         raise PenaltyError("invalid", "Money allows at most two decimal places.")
 
 
+def _assert_open(when: date) -> None:
+    key = closed_period_for(when, when)
+    if key is not None:
+        raise PenaltyError("period_closed", f"Payroll period {key} is closed.")
+
+
 def create_penalty(actor, data: dict) -> Penalty:
     target, ptype = data["user"], data.get("penalty_type")
     if target.pk == actor.pk and not is_top(actor):
@@ -53,6 +60,7 @@ def create_penalty(actor, data: dict) -> Penalty:
     when: date = data["date"]
     if when > timezone.now().date():
         raise PenaltyError("future_date", "The penalty date cannot be in the future.")
+    _assert_open(when)
     title = (data.get("title") or "").strip()
     if ptype is not None:
         if not ptype.is_active:
@@ -84,6 +92,7 @@ def void_penalty(actor, penalty, reason: str) -> Penalty:
         raise PenaltyError("invalid", "A reason is required.")
     if not can_void(actor, penalty):
         raise PenaltyError("forbidden", "You may not void this penalty.")
+    _assert_open(penalty.date)
     with transaction.atomic():
         penalty.voided_at = timezone.now()
         penalty.voided_by = actor

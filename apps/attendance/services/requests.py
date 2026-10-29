@@ -9,6 +9,7 @@ from apps.attendance.types import PunchSource, RequestKind, RequestStatus
 
 from . import leave, request_notices as notices
 from .evaluate import recalculate
+from .locks import closed_period_for
 
 MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024
 ATTACHMENT_EXTENSIONS = {"pdf", "jpg", "jpeg", "png"}
@@ -168,6 +169,12 @@ def _require_state(req, *statuses) -> None:
                            "invalid_state")
 
 
+def _assert_open(start, end) -> None:
+    key = closed_period_for(start, end)
+    if key is not None:
+        raise RequestError(f"Payroll period {key} is closed.", "period_closed")
+
+
 def _is_owner(actor, req) -> bool:
     return actor.pk in (req.user_id, req.created_by_id)
 
@@ -194,6 +201,7 @@ def _decide(req, actor, status: str, note: str) -> None:
 @transaction.atomic
 def submit(actor, data: dict, attachment=None) -> Request:
     v = _validate(actor, data, attachment)
+    _assert_open(v["start_date"], v["end_date"])
     user = data.get("user") or actor
     req = Request.objects.create(user=user, created_by=actor, kind=data["kind"], attachment=attachment, **v)
     notices.notify_submitted(req, actor)
@@ -207,6 +215,8 @@ def edit(actor, req, data: dict, attachment=None) -> Request:
         raise PermissionDenied("Only the requester can edit this request.")
     _require_state(req, RequestStatus.PENDING)
     v = _validate(actor, data, attachment, existing=req)
+    _assert_open(req.start_date, req.end_date)
+    _assert_open(v["start_date"], v["end_date"])
     for name, value in v.items():
         setattr(req, name, value)
     if attachment is not None:
@@ -223,6 +233,7 @@ def approve(actor, req, note: str = "", over_balance: bool = False) -> Request:
     if over_balance and not is_hr_plus(actor):
         raise PermissionDenied("Only HR can approve over the balance.")
     _require_state(req, RequestStatus.PENDING)
+    _assert_open(req.start_date, req.end_date)
     original = None
     if req.kind == RequestKind.LEAVE and req.leave_type.uses_balance:
         days = len(leave.working_dates(req.user, req.start_date, req.end_date))
@@ -233,6 +244,7 @@ def approve(actor, req, note: str = "", over_balance: bool = False) -> Request:
     if req.kind == RequestKind.CANCELLATION:
         original = _lock(req.cancels)
         _require_state(original, RequestStatus.APPROVED)
+        _assert_open(original.start_date, original.end_date)
     _decide(req, actor, RequestStatus.APPROVED, note)
     if req.kind == RequestKind.MISSED_PUNCH:
         req.punch = Punch.objects.create(user=req.user, timestamp=req.punch_time,
@@ -269,6 +281,7 @@ def cancel(actor, req) -> Request:
     req = _lock(req)
     if not _is_owner(actor, req):
         raise PermissionDenied("Only the requester can cancel this request.")
+    _assert_open(req.start_date, req.end_date)
     was_approved = req.status == RequestStatus.APPROVED
     if was_approved and (req.start_date <= _today() or req.kind == RequestKind.CANCELLATION):
         raise RequestError("A started request needs a cancellation request.", "invalid_state")
@@ -291,6 +304,7 @@ def revoke(actor, req, note: str) -> Request:
     _require_state(req, RequestStatus.APPROVED)
     if req.kind == RequestKind.CANCELLATION:
         raise RequestError("A cancellation request cannot be revoked.", "invalid_state")
+    _assert_open(req.start_date, req.end_date)
     _decide(req, actor, RequestStatus.REVOKED, note)
     req.save()
     _drop_punch(req)

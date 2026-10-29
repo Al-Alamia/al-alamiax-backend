@@ -7,3 +7,4 @@ class NotificationKinds(models.TextChoices):
     PENALTY = ("penalty", "Penalty")
     DEVICE = ("device", "Device")
     TEAM = ("team", "Team")
+    PAYROLL = ("payroll", "Payroll")
