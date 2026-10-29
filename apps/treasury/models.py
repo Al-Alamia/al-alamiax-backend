@@ -4,7 +4,6 @@ from apps.users.types import RequestStatuses
 from core.models import  BaseModel 
 from apps.users.models import User , create_update_history
 from django.utils.timezone import now , timedelta
-# from commission.models import BasicRecord
 
 def tomorrow():
     return now() + timedelta(days=1)
@@ -29,7 +28,6 @@ class TreasuryOutcome(BaseModel):
     amount = models.PositiveIntegerField(verbose_name="Amount")
     from_advance =  models.ForeignKey(Advance,verbose_name="Advance" ,  on_delete=models.CASCADE , null=True , blank=True)
     from_salary =  models.ForeignKey("commission.Commission",verbose_name="Salary" ,  on_delete=models.CASCADE , null=True , blank=True)
-    from_basic =  models.ForeignKey("commission.BasicRecord",verbose_name="Basic" ,  on_delete=models.CASCADE , null=True , blank=True)
     details = models.CharField(verbose_name="Details" , max_length=250 )
 
 

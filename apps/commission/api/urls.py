@@ -1,7 +1,6 @@
 from django.urls import path
-from apps.commission.views import BasicRecordAPI, CommissionAPI
+from apps.commission.views import CommissionAPI
 
 urlpatterns = [
-    path('basic-details',BasicRecordAPI.as_view()),
     path('salary',CommissionAPI.as_view()),
 ]
