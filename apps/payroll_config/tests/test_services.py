@@ -176,7 +176,11 @@ class CopyBasicTests(TestCase):
         legacy = [SimpleNamespace(user_id=a.pk, basic=5000), SimpleNamespace(user_id=b.pk, basic=0)]
 
         class Legacy:
-            objects = SimpleNamespace(filter=lambda **kw: [r for r in legacy if r.basic > 0])
+            def _filter(**kw):
+                assert kw == {"basic__gt": 0}, kw
+                return [r for r in legacy if r.basic > 0]
+
+            objects = SimpleNamespace(filter=_filter)
 
         fake_apps = SimpleNamespace(
             get_model=lambda app, name: Legacy if name == "UserCommissionDetails"

@@ -176,6 +176,12 @@ def save_upload(request:Request):
 
 
 
+def _number(value):
+    """Decimal -> JSON number: int when whole, else float."""
+    value = Decimal(value)
+    return int(value) if value == value.to_integral_value() else float(value)
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def user_leads(request:Request):
@@ -213,8 +219,8 @@ def user_leads(request:Request):
     plus_value = sum((daily_bonus(rates, c) for c in plus_days), Decimal("0"))
     return Response({
         "total": leads.count(), "plus": len(plus_days), "teams": teams_details,
-        "plus_value": plus_value, "plus_price": lowest.amount if lowest else 0,
-        "american_leads_price": rates.american_lead_price if rates else 0,
+        "plus_value": _number(plus_value), "plus_price": _number(lowest.amount if lowest else 0),
+        "american_leads_price": _number(rates.american_lead_price if rates else 0),
     })
 
 

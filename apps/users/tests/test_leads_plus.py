@@ -30,12 +30,15 @@ class UserLeadsPlusTests(BaseUserTestCase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["total"], 21)
         self.assertEqual(r.data["plus"], 2)
-        self.assertEqual(Decimal(str(r.data["plus_value"])), Decimal("150"))
-        self.assertEqual(Decimal(str(r.data["plus_price"])), Decimal("50"))
-        self.assertEqual(Decimal(str(r.data["american_leads_price"])), Decimal("30"))
+        for key, expected in (("plus_value", 150), ("plus_price", 50), ("american_leads_price", 30)):
+            self.assertEqual(r.json()[key], expected)
+            self.assertIsInstance(r.json()[key], (int, float))
+            self.assertNotIsInstance(r.json()[key], str)
 
     def test_no_sheet_gives_zeros(self):
         r = self.summary()
         self.assertEqual(r.status_code, 200)
-        self.assertEqual((r.data["plus"], r.data["plus_value"], r.data["plus_price"],
-                          r.data["american_leads_price"]), (0, 0, 0, 0))
+        body = r.json()
+        self.assertEqual((body["plus"], body["plus_value"], body["plus_price"],
+                          body["american_leads_price"]), (0, 0, 0, 0))
+        self.assertIsInstance(body["plus_value"], (int, float))
