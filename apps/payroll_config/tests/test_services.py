@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.apps import apps as django_apps
 from django.test import TestCase
 
-from apps.commission.models import UserCommissionDetails
+from types import SimpleNamespace
 from apps.payroll_config import services
 from apps.payroll_config.models import BasicSalary
 from apps.payroll_config.services import ConfigError, MissingRate
@@ -173,9 +173,15 @@ class CopyBasicTests(TestCase):
         dept = Department.objects.create(name="Sales", code="sales")
         a = User.objects.create_user(username="a", password="x", department=dept)
         b = User.objects.create_user(username="b", password="x", department=dept)
-        UserCommissionDetails.objects.update_or_create(user=a, defaults={"basic": 5000})
-        UserCommissionDetails.objects.update_or_create(user=b, defaults={"basic": 0})
-        n = services.copy_basic_salaries(django_apps, date(2026, 11, 17))
+        legacy = [SimpleNamespace(user_id=a.pk, basic=5000), SimpleNamespace(user_id=b.pk, basic=0)]
+
+        class Legacy:
+            objects = SimpleNamespace(filter=lambda **kw: [r for r in legacy if r.basic > 0])
+
+        fake_apps = SimpleNamespace(
+            get_model=lambda app, name: Legacy if name == "UserCommissionDetails"
+            else django_apps.get_model(app, name))
+        n = services.copy_basic_salaries(fake_apps, date(2026, 11, 17))
         self.assertEqual(n, 1)
         row = BasicSalary.objects.get()
         self.assertEqual((row.user, row.amount, row.effective_from),

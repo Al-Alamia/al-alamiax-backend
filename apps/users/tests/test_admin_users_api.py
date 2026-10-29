@@ -1,7 +1,11 @@
+from datetime import date
+from decimal import Decimal
+
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.commission.models import UserCommissionDetails
+from apps.payroll_config.models import BasicSalary
+from apps.payroll_config.services import set_basic
 from apps.users.models import Department, Profile, UpdateHistory, User
 from apps.users.types import UserTypes
 from .base import BaseUserTestCase
@@ -28,7 +32,7 @@ class AdminUsersTestBase(BaseUserTestCase):
         return data
 
     def counts(self):
-        return (User.objects.count(), Profile.objects.count(), UserCommissionDetails.objects.count())
+        return (User.objects.count(), Profile.objects.count(), BasicSalary.objects.count())
 
 
 class ListTests(AdminUsersTestBase):
@@ -109,12 +113,27 @@ class CreateTests(AdminUsersTestBase):
         user = User.objects.get(username="newbie")
         self.assertTrue(user.check_password(STRONG))
         self.assertTrue(Profile.objects.filter(user=user).exists())
-        self.assertEqual(UserCommissionDetails.objects.get(user=user).basic, 5000)
-        self.assertEqual(r.data["basic_salary"], 5000)
+        entry = BasicSalary.objects.get(user=user)
+        self.assertEqual((entry.amount, entry.effective_from, entry.created_by),
+                         (Decimal("5000"), date.today().replace(day=1), self.hr))
+        self.assertEqual(r.data["basic_salary"], "5000.00")
         self.assertEqual(r.data["name"], "New Bie")
         self.assertNotIn(STRONG, r.content.decode())
         self.assertNotIn("pbkdf2", r.content.decode())
         self.assertEqual(user.department, self.department)
+
+    def test_create_zero_or_absent_salary_creates_no_entry(self):
+        self.authenticate_as(self.hr)
+        self.assertEqual(self.client.post(BASE, self.payload(basic_salary=0), format="json").status_code, 201)
+        data = self.payload(username="other")
+        del data["basic_salary"]
+        self.assertEqual(self.client.post(BASE, data, format="json").status_code, 201)
+        self.assertEqual(BasicSalary.objects.count(), 0)
+
+    def test_create_rejects_negative_salary(self):
+        self.authenticate_as(self.hr)
+        r = self.client.post(BASE, self.payload(basic_salary=-1), format="json")
+        self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))
 
     def test_create_atomic_on_duplicate_username(self):
         self.authenticate_as(self.hr)
@@ -146,7 +165,7 @@ class CreateTests(AdminUsersTestBase):
 
     def test_bad_basic_salary_invalid(self):
         self.authenticate_as(self.hr)
-        for bad in (-1, "abc", 1.5, True, "²", "٣"):
+        for bad in (-1, "abc", 1.555, True, "²", "٣"):
             r = self.client.post(BASE, self.payload(basic_salary=bad), format="json")
             self.assertEqual(r.status_code, 400, bad)
 
@@ -180,14 +199,13 @@ class DetailTests(AdminUsersTestBase):
         self.assertTrue(r.data["can"]["reset_password"])
 
     def test_basic_salary_hidden_from_non_managing_viewer(self):
-        from apps.commission.models import UserCommissionDetails
-        UserCommissionDetails.objects.update_or_create(user=self.agent, defaults={"basic": 4000})
+        set_basic(self.agent, date.today(), 4000, "", None)
         self.authenticate_as(self.manager)
         r = self.client.get(f"{BASE}/{self.agent.uuid}")
         self.assertEqual(r.status_code, 200)
         self.assertIsNone(r.data["basic_salary"])
         self.authenticate_as(self.hr)
-        self.assertEqual(float(self.client.get(f"{BASE}/{self.agent.uuid}").data["basic_salary"]), 4000)
+        self.assertEqual(self.client.get(f"{BASE}/{self.agent.uuid}").data["basic_salary"], "4000.00")
 
     def test_detail_404_for_invisible(self):
         self.authenticate_as(self.hr)
@@ -221,6 +239,13 @@ class PatchTests(AdminUsersTestBase):
         self.assertIsNone(self.agent.department)
         self.assertTrue(UpdateHistory.objects.filter(
             model_uuid=self.agent.uuid, model_name="User", user=self.hr).exists())
+
+    def test_patch_rejects_basic_salary(self):
+        self.authenticate_as(self.hr)
+        r = self.client.patch(f"{BASE}/{self.agent.uuid}", {"basic_salary": 100}, format="json")
+        self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))
+        self.assertEqual(r.data["message"], "Change salary from the salary history.")
+        self.assertFalse(BasicSalary.objects.filter(user=self.agent).exists())
 
     def test_patch_ignores_password(self):
         self.authenticate_as(self.hr)

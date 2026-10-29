@@ -1,18 +1,19 @@
 import uuid as uuid_lib
+from datetime import date
+from decimal import Decimal
 
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
-from apps.commission.models import UserCommissionDetails
+from apps.payroll_config.services import ConfigError, _money, set_basic
 from apps.users.admin_permissions import assignable_roles, can_manage_user
 from apps.attendance.permissions import is_hr_plus
 from apps.users.models import Department, Project, User
 from apps.users.types import UserTypes
 from apps.users.views.passwords import _invalid_new_password
 
-MAX_BASIC_SALARY = 2_000_000_000
 _TEXT_LIMITS = {"first_name": 150, "last_name": 150, "username": 150, "title": 100,
                 "crm_username": 200, "fp_id": 200}
 
@@ -73,13 +74,13 @@ def _check_unique(username, fp_id, exclude=None):
 
 def _basic_salary(raw):
     if raw in (None, ""):
-        return 0
-    if isinstance(raw, bool) or not isinstance(raw, (int, str)) or not (str(raw).strip().isascii() and str(raw).strip().isdecimal()):
-        raise UserAdminError("invalid", "'basic_salary' must be a non-negative integer.")
-    value = int(raw)
-    if value > MAX_BASIC_SALARY:
-        raise UserAdminError("invalid", "'basic_salary' is too large.")
-    return value
+        return Decimal("0")
+    if isinstance(raw, str) and not raw.strip().isascii():
+        raise UserAdminError("invalid", "'basic_salary' must be a number.")
+    try:
+        return _money(raw, "basic_salary")
+    except ConfigError as exc:
+        raise UserAdminError("invalid", exc.message)
 
 
 def _check_password(password, user):
@@ -115,7 +116,8 @@ def create_user(actor, data) -> User:
             user.set_password(data["password"])
             setattr(user, "__by", actor)
             user.save()
-            UserCommissionDetails.objects.update_or_create(user=user, defaults={"basic": basic})
+            if basic > 0:
+                set_basic(user, date.today(), basic, "", actor)
     except IntegrityError:
         raise UserAdminError("duplicate_username", "This username or fingerprint ID is already used.")
     return user
@@ -124,6 +126,8 @@ def create_user(actor, data) -> User:
 def update_user(actor, user, data) -> User:
     if not can_manage_user(actor, user):
         raise UserAdminError("forbidden", "You are not allowed to edit this user.", 403)
+    if "basic_salary" in data:
+        raise UserAdminError("invalid", "Change salary from the salary history.")
     values = {}
     for name in ("first_name", "last_name", "username", "title", "crm_username", "fp_id"):
         if name in data:

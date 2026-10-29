@@ -4,7 +4,7 @@ from functools import lru_cache
 from django.apps import apps
 from django.db.models import Q
 
-from apps.commission.models import UserCommissionDetails
+from apps.payroll_config.models import BasicSalary
 from apps.users.serializers.admin import user_name
 from apps.users.models import BaseModel, Profile, UpdateHistory, is_redacted_field, snapshot_values
 
@@ -39,14 +39,13 @@ def diff_entries(rows) -> list:
 
 
 def user_history(user):
-    """Newest-first UpdateHistory rows for the user, their profile and their commission details."""
+    """Newest-first UpdateHistory rows for the user, their profile and their basic salary entries."""
     targets = {("User", user.uuid)}
     profile = Profile.objects.filter(user=user).first()
     if profile is not None:
         targets.add(("Profile", profile.uuid))
-    details = UserCommissionDetails.objects.filter(user=user).first()
-    if details is not None:
-        targets.add(("UserCommissionDetails", details.uuid))
+    for uuid in BasicSalary.objects.filter(user=user).values_list("uuid", flat=True):
+        targets.add(("BasicSalary", uuid))
     cond = Q()
     for name, uuid in targets:
         cond |= Q(model_name=name, model_uuid=uuid)

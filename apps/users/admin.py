@@ -6,6 +6,9 @@ from django.contrib.auth.admin import UserAdmin
 from django.contrib.auth.forms import UserChangeForm, UserCreationForm
 from django.contrib.auth.hashers import identify_hasher, make_password
 
+import datetime
+
+from apps.payroll_config.services import basic_for
 from .models import (
     User , 
     Department ,
@@ -47,10 +50,10 @@ class UserResource(resources.ModelResource):
         widget=ForeignKeyWidget(Department, 'name')
     )
     
-    basic_salary = fields.Field(
-        column_name='basic_salary',
-        attribute='usercommissiondetails__basic'
-    )
+    basic_salary = fields.Field(column_name='basic_salary')
+
+    def dehydrate_basic_salary(self, user):
+        return basic_for(user, datetime.date.today())
 
     class Meta:
         model = User

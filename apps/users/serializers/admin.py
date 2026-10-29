@@ -1,5 +1,8 @@
 """Plain dict builders for the admin users API."""
-from apps.commission.models import UserCommissionDetails
+from datetime import date
+from decimal import Decimal
+
+from apps.payroll_config.services import basic_for
 from apps.users.admin_permissions import (
     assignable_roles, can_manage_devices, can_manage_files, can_manage_user, can_view_devices,
     can_view_files, can_view_history, is_top)
@@ -50,12 +53,12 @@ def detail(request, user) -> dict:
     viewer = request.user
     data = list_item(request, user)
     profile = getattr(user, "profile", None) if hasattr(user, "profile") else None
-    basic = UserCommissionDetails.objects.filter(user=user).values_list("basic", flat=True).first()
     data.update({
         "phone": profile.phone if profile else None,
         "telegram_id": profile.telegram_id if profile else None,
         "about": profile.about if profile else "",
-        "basic_salary": (basic or 0) if (viewer.pk == user.pk or can_manage_user(viewer, user)) else None,
+        "basic_salary": (str(basic_for(user, date.today()) or Decimal("0.00"))
+                         if (viewer.pk == user.pk or can_manage_user(viewer, user)) else None),
         "date_joined": user.date_joined, "last_login": user.last_login,
         "assignable_roles": assignable_roles(viewer),
     })

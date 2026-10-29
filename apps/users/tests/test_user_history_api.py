@@ -1,4 +1,6 @@
-from apps.commission.models import UserCommissionDetails
+from datetime import date
+
+from apps.payroll_config.services import set_basic
 from apps.users.models import Department, Profile, UpdateHistory
 from apps.users.types import UserTypes
 from .base import BaseUserTestCase
@@ -57,15 +59,13 @@ class UserHistoryApiTests(BaseUserTestCase):
         self.assertEqual(entry["by"]["uuid"], str(self.agent.uuid))
         self.assertIn(("about", "", "hello"), [(c["field"], c["old"], c["new"]) for c in entry["changes"]])
 
-    def test_commission_details_included(self):
-        d = UserCommissionDetails.objects.get_or_create(user=self.agent)[0]
-        d.basic = 500
-        setattr(d, "__by", self.hr)
-        d.save()
+    def test_basic_salary_changes_included(self):
+        set_basic(self.agent, date.today(), 400, "", self.hr)
+        set_basic(self.agent, date.today(), 500, "", self.hr)
         self.authenticate_as(self.hr)
         results = self.client.get(self.url(self.agent)).data["results"]
-        entry = next(e for e in results if e["model"] == "UserCommissionDetails")
-        self.assertIn(("basic", "0", "500"), [(c["field"], c["old"], c["new"]) for c in entry["changes"]])
+        entry = next(e for e in results if e["model"] == "BasicSalary")
+        self.assertIn(("amount", "400.00", "500.00"), [(c["field"], c["old"], c["new"]) for c in entry["changes"]])
 
     def test_other_users_excluded(self):
         peer = make_user("peer", UserTypes.AGENT, department=self.department)

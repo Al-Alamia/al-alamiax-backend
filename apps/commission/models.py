@@ -9,39 +9,9 @@ from apps.treasury.models import TreasuryOutcome
 # Create your models here.
 
 
-class UserCommissionDetails(BaseModel):
-    user = models.OneToOneField(User,verbose_name="User" , on_delete=models.CASCADE)
-    basic = models.PositiveIntegerField(verbose_name="Basic Salary"  , default= 0)
-
-    def __str__(self):
-        return f"{self.user} - {self.basic}"
-
-    class Meta:
-        verbose_name = 'User Commission Details'
-        verbose_name_plural = 'User Commission Details'
-
-
-
-class CoinChanger(BaseModel):
-    egp_to_sar = models.FloatField(verbose_name="1 SAR equal to ? in EGP")
-    date  = models.DateField(verbose_name="Changer Date" , default=now )
-    
-    def __str__(self):
-        return self.date.strftime("%Y/%m")
-
-    class Meta:
-        verbose_name = 'Coin Changer'
-        verbose_name_plural = 'Coin Changers'    
-        unique_together = ['date',]
-
-    def calc_concurrency(self , sar_value:typing.Union[int,float]):
-        return sar_value * self.egp_to_sar
-        
-
 class BasicRecord(BaseModel):
     user = models.ForeignKey(User, verbose_name="User", on_delete=models.SET_NULL , null=True)
     take_annual = models.IntegerField(verbose_name="Take Annual" , default= 0 )
-    # user_commission_details = models.ForeignKey(UserCommissionDetails, verbose_name="User Commission Details", on_delete=models.SET_NULL , null=True)
     deduction_days = models.FloatField(verbose_name="Deduction Days" , default=0)
     deduction_money = models.IntegerField(verbose_name="Deduction Money" , default=0)
     kpi = models.FloatField(verbose_name="KPI" , default=0)
@@ -79,25 +49,6 @@ class Commission(BaseModel):
         
         
 
-class Subscription(BaseModel):
-    count = models.IntegerField(verbose_name="Subscriptions Count",unique=True)
-    value = models.IntegerField(verbose_name="Money" )
-
-
-class Additional(BaseModel):
-    plus = models.IntegerField(verbose_name="Plus +2 Price")
-    american_leads = models.IntegerField(verbose_name="American Leads Price" )
-
-
-def create_user_commission_details(sender, instance:User, created ,**kwargs):
-    if created :
-        details = UserCommissionDetails.objects.create(
-            user=instance ,
-            basic=kwargs.get('basic',0),
-            )
-        details.save()
-
-
 def create_Outcome_record(sender, instance:BasicRecord, created ,**kwargs):
     if created :
         details = TreasuryOutcome.objects.create(
@@ -132,11 +83,7 @@ def create_Outcome_record_salary(sender, instance:Commission, created ,**kwargs)
         details.save()
 
 
-pre_save.connect(create_update_history,sender=CoinChanger)
-pre_save.connect(create_update_history, sender=UserCommissionDetails)
-pre_save.connect(create_update_history, sender=CoinChanger)
 pre_save.connect(create_update_history, sender=BasicRecord)
 pre_save.connect(create_update_history, sender=Commission)
-post_save.connect(create_user_commission_details,sender=User)
 # post_save.connect(create_Outcome_record,sender=BasicRecord)
 post_save.connect(create_Outcome_record_salary,sender=Commission)

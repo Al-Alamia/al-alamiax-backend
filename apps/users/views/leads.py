@@ -5,7 +5,7 @@ from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST
 from rest_framework.request import Request
 from apps.users.models import Lead , LeadUpdate , User 
 from apps.users.types import LeadUpdateTypes
-from apps.commission.models import Additional
+from apps.payroll_config.services import daily_bonus, rates_for
 from apps.teams.models import Team
 from apps.users.serializers import  LeadSerializer
 from apps.users.views import IsAuthenticated , IsOwner , IsSuperUser
@@ -13,6 +13,7 @@ from django.db import connection
 import datetime , numpy,calendar
 from django.db.models import Q , Case , Count
 from datetime import date
+from decimal import Decimal
 from django.db.models.functions import TruncDate
 from utils.parsers import parse_date
 
@@ -187,15 +188,14 @@ def user_leads(request:Request):
         date( int(year) , int(month) , last_day) + datetime.timedelta(days=1)
     )
     leads = Lead.objects.filter(date__range = date_range ,user__uuid = user_uuid)        
-    lead_counts = (
+    per_day = list(
         leads
         .annotate(day=TruncDate('date'))
         .values('day')
         .annotate(lead_count=Count('uuid'))
-        .filter(lead_count__gte=5)
-        .count()
+        .values_list('lead_count', flat=True)
     )
-    
+
     teams_details = []
     teams = Team.objects.filter(leader__uuid= user_uuid, is_active=True)
     for team in teams:
@@ -205,8 +205,17 @@ def user_leads(request:Request):
         })
     
     
-    additional = Additional.objects.first()
-    return Response({"total":leads.count(),"plus":lead_counts,"teams": teams_details, "plus_value":lead_counts * getattr(additional,"plus",30)  , "plus_price" : getattr(additional,"plus",30), "american_leads_price": getattr(additional,"american_leads",30)})
+    user = User.objects.filter(uuid=user_uuid).select_related("department").first()
+    rates = rates_for(user.department, date_range[0]) if user and user.department else None
+    steps = list(rates.steps.order_by("min_leads")) if rates else []
+    lowest = steps[0] if steps else None
+    plus_days = [c for c in per_day if lowest and c >= lowest.min_leads]
+    plus_value = sum((daily_bonus(rates, c) for c in plus_days), Decimal("0"))
+    return Response({
+        "total": leads.count(), "plus": len(plus_days), "teams": teams_details,
+        "plus_value": plus_value, "plus_price": lowest.amount if lowest else 0,
+        "american_leads_price": rates.american_lead_price if rates else 0,
+    })
 
 
 
