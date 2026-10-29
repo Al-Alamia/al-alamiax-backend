@@ -1,5 +1,5 @@
 from datetime import date
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 
@@ -23,6 +23,31 @@ class MissingRate(ConfigError):
         super().__init__("missing_rate", f"No exchange rate set for {month:%Y-%m}.")
 
 
+def _parse_decimal(value, field, *, places, upper, positive=False):
+    """Parse value to a finite Decimal within bounds, else ConfigError('invalid')."""
+    if isinstance(value, bool) or not isinstance(value, (str, int, float, Decimal)):
+        raise ConfigError("invalid", f"{field} must be a number.")
+    try:
+        d = Decimal(str(value).strip())
+    except InvalidOperation:
+        raise ConfigError("invalid", f"{field} must be a number.")
+    if not d.is_finite():
+        raise ConfigError("invalid", f"{field} must be a finite number.")
+    if positive and d <= 0:
+        raise ConfigError("invalid", f"{field} must be greater than zero.")
+    if not positive and d < 0:
+        raise ConfigError("invalid", f"{field} must be zero or more.")
+    if d >= upper:
+        raise ConfigError("invalid", f"{field} is too large.")
+    if d != d.quantize(Decimal(1).scaleb(-places)):
+        raise ConfigError("invalid", f"{field} allows at most {places} decimal places.")
+    return d
+
+
+def _money(value, field):
+    return _parse_decimal(value, field, places=2, upper=Decimal(10) ** 10)
+
+
 def _check_not_past(month, today):
     if month < month_start(today or date.today()):
         raise ConfigError("past_month", "Cannot change this setting for a past month.")
@@ -37,9 +62,7 @@ def basic_for(user, month):
 def set_basic(user, month, amount, note, by, *, today=None):
     month = month_start(month)
     _check_not_past(month, today)
-    amount = Decimal(str(amount))
-    if amount < 0:
-        raise ConfigError("invalid", "Amount must be zero or more.")
+    amount = _money(amount, "amount")
     entry, _ = BasicSalary.objects.update_or_create(
         user=user, effective_from=month,
         defaults={"amount": amount, "note": note or "", "created_by": by})
@@ -55,9 +78,8 @@ def rate_for(month):
 
 
 def set_rate(month, sar_to_egp, by):
-    sar_to_egp = Decimal(str(sar_to_egp))
-    if sar_to_egp <= 0:
-        raise ConfigError("invalid", "Rate must be greater than zero.")
+    sar_to_egp = _parse_decimal(
+        sar_to_egp, "sar_to_egp", places=4, upper=Decimal(1000000), positive=True)
     rate, _ = ExchangeRate.objects.update_or_create(
         month=month_start(month), defaults={"sar_to_egp": sar_to_egp, "created_by": by})
     return rate
@@ -76,19 +98,22 @@ def rates_for(department, month):
 
 
 def _validate_steps(steps):
+    if not isinstance(steps, (list, tuple)):
+        raise ConfigError("invalid", "steps must be a list.")
     if len(steps) > MAX_STEPS:
         raise ConfigError("invalid", f"At most {MAX_STEPS} steps are allowed.")
     out = []
     for s in steps:
-        try:
-            min_leads = int(s["min_leads"])
-            amount = Decimal(str(s["amount"]))
-        except (KeyError, TypeError, ValueError, ArithmeticError):
+        if not isinstance(s, dict) or "min_leads" not in s or "amount" not in s:
             raise ConfigError("invalid", "Each step needs min_leads and amount.")
-        if min_leads < 1:
-            raise ConfigError("invalid", "min_leads must be at least 1.")
-        if amount < 0:
-            raise ConfigError("invalid", "Step amount must be zero or more.")
+        min_leads = s["min_leads"]
+        if isinstance(min_leads, str) and min_leads.strip().isdigit():
+            min_leads = int(min_leads)
+        if isinstance(min_leads, bool) or not isinstance(min_leads, int) or min_leads < 1:
+            raise ConfigError("invalid", "min_leads must be an integer of at least 1.")
+        if min_leads >= 2 ** 31:
+            raise ConfigError("invalid", "min_leads is too large.")
+        amount = _money(s["amount"], "step amount")
         out.append((min_leads, amount))
     out.sort(key=lambda x: x[0])
     for prev, cur in zip(out, out[1:]):
@@ -102,9 +127,7 @@ def _validate_steps(steps):
 def save_rates(department, month, american_lead_price, steps, by, *, today=None):
     month = month_start(month)
     _check_not_past(month, today)
-    price = Decimal(str(american_lead_price))
-    if price < 0:
-        raise ConfigError("invalid", "American lead price must be zero or more.")
+    price = _money(american_lead_price, "american_lead_price")
     normalized = _validate_steps(steps)
     with transaction.atomic():
         rates, _ = DepartmentRates.objects.update_or_create(

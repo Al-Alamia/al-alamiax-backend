@@ -123,6 +123,51 @@ class DepartmentRatesTests(TestCase):
         self.assertIsNone(services.rates_for(self.dept, date(2026, 10, 4)))
 
 
+class ValidationTests(TestCase):
+    BAD = ["abc", "NaN", "Infinity", "-Infinity", "1e30", "1.123", True, None, "-1"]
+
+    def setUp(self):
+        self.dept = Department.objects.create(name="Sales", code="sales")
+        self.u = User.objects.create_user(username="v", password="x", department=self.dept)
+        self.today = date(2026, 11, 15)
+        self.month = date(2026, 11, 1)
+
+    def invalid(self, fn):
+        with self.assertRaises(ConfigError) as cm:
+            fn()
+        self.assertEqual(cm.exception.code, "invalid")
+
+    def test_bad_amount(self):
+        for v in self.BAD:
+            self.invalid(lambda: services.set_basic(self.u, self.month, v, "", None, today=self.today))
+
+    def test_bad_price(self):
+        for v in self.BAD:
+            self.invalid(lambda: services.save_rates(self.dept, self.month, v, [], None, today=self.today))
+
+    def test_bad_step_amount(self):
+        for v in self.BAD:
+            self.invalid(lambda: services.save_rates(
+                self.dept, self.month, 1, [{"min_leads": 1, "amount": v}], None, today=self.today))
+
+    def test_bad_rate(self):
+        for v in ["abc", "NaN", "Infinity", "1e30", "1.12345", True, None, "0", "1000000"]:
+            self.invalid(lambda: services.set_rate(self.month, v, None))
+
+    def test_bad_min_leads(self):
+        for v in [5.9, True, "5.9", None, 0]:
+            self.invalid(lambda: services.save_rates(
+                self.dept, self.month, 1, [{"min_leads": v, "amount": 1}], None, today=self.today))
+
+    def test_steps_not_list(self):
+        for v in [None, "x", {"min_leads": 1}]:
+            self.invalid(lambda: services.save_rates(self.dept, self.month, 1, v, None, today=self.today))
+
+    def test_valid_edges(self):
+        services.set_rate(self.month, "999999.9999", None)
+        services.set_basic(self.u, self.month, "9999999999.99", "", None, today=self.today)
+
+
 class CopyBasicTests(TestCase):
     def test_copy(self):
         dept = Department.objects.create(name="Sales", code="sales")
