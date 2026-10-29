@@ -259,3 +259,45 @@ def set_leader(team, user, by):
         if user is not None:
             team.agents.remove(user)
     return team
+
+
+def _check_name(name, department_id, exclude=None):
+    from .models import Team
+    clash = Team.objects.filter(
+        department_id=department_id, is_active=True, name__iexact=name)
+    if exclude is not None:
+        clash = clash.exclude(pk=exclude.pk)
+    if clash.exists():
+        raise PlanError("duplicate_name", "An active team with this name already exists in the department.")
+
+
+def create_team(name, department, leader, agents, include_leader_in_total, by):
+    from .models import Team
+    if leader is not None and any(u.pk == leader.pk for u in agents):
+        raise PlanError("leader_is_agent", "The team leader cannot also be an agent.")
+    _check_name(name, department.pk)
+    with transaction.atomic():
+        team = Team.objects.create(
+            name=name, department=department, include_leader_in_total=include_leader_in_total)
+        if leader is not None:
+            set_leader(team, leader, by)
+        if agents:
+            set_members(team, list(agents), [], by)
+    return team
+
+
+def update_team(team, by, *, name=None, department=None, include_leader_in_total=None,
+                set_leader_to=False, leader=None):
+    """Apply a partial update; pass ``set_leader_to=True`` to change the leader (``leader`` may be None)."""
+    new_name = team.name if name is None else name
+    new_dept = team.department if department is None else department
+    if (new_name != team.name or new_dept.pk != team.department_id) and team.is_active:
+        _check_name(new_name, new_dept.pk, exclude=team)
+    with transaction.atomic():
+        team.name, team.department = new_name, new_dept
+        if include_leader_in_total is not None:
+            team.include_leader_in_total = include_leader_in_total
+        team.save()
+        if set_leader_to:
+            set_leader(team, leader, by)
+    return team
