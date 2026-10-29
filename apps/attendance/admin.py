@@ -8,6 +8,8 @@ from .models import (
     Holiday,
     LeaveAllowance,
     LeaveType,
+    PeriodClose,
+    PeriodCloseLog,
     Punch,
     Request,
     Shift,
@@ -88,3 +90,24 @@ class RequestAdmin(admin.ModelAdmin):
     list_display = ["user", "kind", "status", "start_date", "end_date"]
     list_filter = ["kind", "status"]
     search_fields = ["user__username"]
+
+
+class _ReadOnlyAdmin(admin.ModelAdmin):
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PeriodClose)
+class PeriodCloseAdmin(_ReadOnlyAdmin):
+    list_display = ["period", "start", "end", "closed_by", "closed_at"]
+
+
+@admin.register(PeriodCloseLog)
+class PeriodCloseLogAdmin(_ReadOnlyAdmin):
+    list_display = ["period", "action", "actor", "created_at"]

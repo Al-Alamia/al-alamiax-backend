@@ -250,3 +250,23 @@ class Request(BaseModel):
 
     def __str__(self):
         return f"{self.user} {self.kind} {self.start_date}"
+
+
+class PeriodClose(models.Model):
+    """A closed payroll period; its attendance data is frozen. Reopening deletes the row."""
+    period = models.CharField(max_length=7, unique=True)  # "YYYY-MM"
+    start = models.DateField()
+    end = models.DateField()
+    closed_by = models.ForeignKey(User, on_delete=models.PROTECT, related_name="periods_closed")
+    closed_at = models.DateTimeField()
+
+
+class PeriodCloseLog(BaseModel):
+    ACTIONS = [("close", "Close"), ("reopen", "Reopen")]
+    period = models.CharField(max_length=7)
+    action = models.CharField(max_length=6, choices=ACTIONS)
+    actor = models.ForeignKey(User, on_delete=models.PROTECT, related_name="period_close_logs")
+    reason = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]

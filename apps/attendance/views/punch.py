@@ -11,6 +11,7 @@ from apps.attendance.permissions import IsManagerPlus, can_correct, can_view
 from apps.attendance.serializers import AttendanceDaySerializer, PunchSerializer
 from apps.attendance.services import web_policy
 from apps.attendance.services.evaluate import evaluate_and_allow
+from apps.attendance.services.locks import PeriodClosed, assert_open
 from apps.attendance.services.shifts import day_for_punch, owner_day, resolve_shift, shift_window, windows_for
 from apps.attendance.types import PunchSource
 from apps.attendance.views import error
@@ -139,6 +140,10 @@ def _create_punch(request):
         return error("timestamp must be YYYY-MM-DDTHH:MM[:SS]", "invalid_timestamp", 400)
     if ts > _now():
         return error("timestamp cannot be in the future", "future_timestamp", 400)
+    try:
+        assert_open(day_for_punch(target, ts))
+    except PeriodClosed as e:
+        return error(str(e), "period_closed", 400)
     punch = Punch.objects.create(user=target, timestamp=ts, source=PunchSource.MANUAL,
                                  created_by=request.user, note=note.strip()[:255])
     evaluate_and_allow(target, day_for_punch(target, ts))
@@ -162,6 +167,10 @@ def delete_punch(request, uuid):
     if punch.source != PunchSource.MANUAL:
         return error("Only manual punches can be deleted", "not_manual", 400)
     user, ts = punch.user, punch.timestamp
+    try:
+        assert_open(day_for_punch(user, ts))
+    except PeriodClosed as e:
+        return error(str(e), "period_closed", 400)
     punch.delete()
     evaluate_and_allow(user, day_for_punch(user, ts))
     return Response(status=204)

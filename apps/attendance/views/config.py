@@ -8,7 +8,7 @@ from django.db import IntegrityError, transaction
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
-from apps.attendance.models import (AttendanceSettings, DeductionPolicy, DeductionTier, Holiday, Shift,
+from apps.attendance.models import (AttendanceSettings, DeductionPolicy, DeductionTier, Holiday, PeriodClose, Shift,
                                     ShiftAssignment, WebPunchPolicy)
 from apps.attendance.permissions import AuthenticatedReadHRWrite, IsHRPlus, ManagerReadHRWrite
 from apps.attendance.services.device_sync import SyncBusy, sync_all
@@ -407,7 +407,11 @@ def settings(request):
         return _invalid_body()
     try:
         if "period_start_day" in body:
-            current.period_start_day = _int_in(body["period_start_day"], 1, 28, "period_start_day")
+            new_day = _int_in(body["period_start_day"], 1, 28, "period_start_day")
+            if new_day != current.period_start_day and PeriodClose.objects.exists():
+                return _bad("Reopen all closed periods before changing the period start day.",
+                            "period_closed")
+            current.period_start_day = new_day
         if "device_sync_minutes" in body:
             current.device_sync_minutes = _int_in(body["device_sync_minutes"], 5, 1440, "device_sync_minutes")
     except _Invalid as e:

@@ -3,9 +3,10 @@ from typing import Optional
 
 from django.db import transaction
 
-from apps.attendance.models import AttendanceDay, AttendanceSettings, Punch, Request
+from apps.attendance.models import AttendanceDay, AttendanceSettings, PeriodClose, Punch, Request
 from apps.attendance.types import DayStatus, RequestKind, RequestStatus, TierKind
 
+from .locks import is_date_closed
 from .periods import period_key_for, period_range
 from .shifts import is_closed, is_holiday, owner_day, policy_for, resolve_shift, shift_window, windows_for
 
@@ -44,6 +45,8 @@ def evaluate_day(user, d: date, now: Optional[datetime] = None) -> Optional[Atte
     Returns None (and removes any existing row) for a date before ``user.date_joined`` and for a working day that is still open with no punches.
     The monthly late allowance is not applied here; see ``apply_allowance``.
     """
+    if is_date_closed(d):  # payroll period closed: the stored day is frozen
+        return AttendanceDay.objects.filter(user=user, date=d).first()
     now = now or datetime.now()
     fields = dict(status=DayStatus.NO_SHIFT, first_in=None, last_out=None, worked_minutes=0,
                   late_minutes=0, early_leave_minutes=0, deduction_days=0.0,
@@ -120,6 +123,8 @@ def evaluate_day(user, d: date, now: Optional[datetime] = None) -> Optional[Atte
 
 def apply_allowance(user, period_key: str) -> None:
     """Excuse the first N late days of the period (by date) and recompute their deductions."""
+    if PeriodClose.objects.filter(period=period_key).exists():
+        return
     start, end = period_range(period_key, AttendanceSettings.get().period_start_day)
     policy = policy_for(user)
     days = AttendanceDay.objects.filter(user=user, date__range=(start, end)).order_by("date")
