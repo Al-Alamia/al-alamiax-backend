@@ -58,6 +58,7 @@ LOCAL_APPS = [
     'apps.attendance.apps.AttendanceConfig' ,
     'apps.penalties.apps.PenaltiesConfig',
     'apps.teams.apps.TeamsConfig',
+    'apps.payroll_config.apps.PayrollConfigConfig',
     'apps.notifications.apps.NotificationsConfig',
 ]
 
