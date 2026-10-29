@@ -17,7 +17,7 @@ class PlanConstraintTests(TestCase):
 
     def assert_integrity(self, **kw):
         with self.assertRaises(IntegrityError), transaction.atomic():
-            CommissionPlan.objects.create(**kw)
+            CommissionPlan.objects.create(**{"metric": "lead_count", **kw})
 
     def test_personal_plan_requires_exactly_one_target(self):
         self.assert_integrity(kind=PlanKind.PERSONAL, department=self.dept, user=self.user)
@@ -27,16 +27,17 @@ class PlanConstraintTests(TestCase):
         self.assert_integrity(kind=PlanKind.TEAM, team=self.team, department=self.dept)
         self.assert_integrity(kind=PlanKind.TEAM)
 
-    def test_one_plan_per_target(self):
+    def test_one_plan_per_target_and_metric(self):
         make_plan(PlanKind.PERSONAL, department=self.dept)
         make_plan(PlanKind.PERSONAL, user=self.user)
         make_plan(PlanKind.TEAM, team=self.team)
         self.assert_integrity(kind=PlanKind.PERSONAL, department=self.dept)
         self.assert_integrity(kind=PlanKind.PERSONAL, user=self.user)
         self.assert_integrity(kind=PlanKind.TEAM, team=self.team)
+        make_plan(PlanKind.PERSONAL, department=self.dept, metric="subscription_count")
 
     def test_version_unique_per_month(self):
         plan = make_plan(PlanKind.PERSONAL, department=self.dept)
-        PlanVersion.objects.create(plan=plan, effective_from=date(2026, 11, 1), metric="lead_count")
+        PlanVersion.objects.create(plan=plan, effective_from=date(2026, 11, 1))
         with self.assertRaises(IntegrityError), transaction.atomic():
-            PlanVersion.objects.create(plan=plan, effective_from=date(2026, 11, 1), metric="lead_count")
+            PlanVersion.objects.create(plan=plan, effective_from=date(2026, 11, 1))

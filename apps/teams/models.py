@@ -31,6 +31,7 @@ class CommissionPlan(BaseModel):
         User, on_delete=models.CASCADE, null=True, blank=True, related_name="commission_plans")
     team = models.ForeignKey(
         Team, on_delete=models.CASCADE, null=True, blank=True, related_name="commission_plans")
+    metric = models.CharField(max_length=32, choices=PlanMetric.choices)
     is_active = models.BooleanField(default=True)
 
     class Meta:
@@ -45,12 +46,14 @@ class CommissionPlan(BaseModel):
                       department__isnull=True, user__isnull=True),
             ),
             models.UniqueConstraint(
-                fields=["department"], condition=Q(department__isnull=False),
-                name="unique_plan_per_department"),
+                fields=["department", "metric"], condition=Q(department__isnull=False),
+                name="unique_plan_per_department_metric"),
             models.UniqueConstraint(
-                fields=["user"], condition=Q(user__isnull=False), name="unique_plan_per_user"),
+                fields=["user", "metric"], condition=Q(user__isnull=False),
+                name="unique_plan_per_user_metric"),
             models.UniqueConstraint(
-                fields=["team"], condition=Q(team__isnull=False), name="unique_plan_per_team"),
+                fields=["team", "metric"], condition=Q(team__isnull=False),
+                name="unique_plan_per_team_metric"),
         ]
 
     def __str__(self):
@@ -60,7 +63,6 @@ class CommissionPlan(BaseModel):
 class PlanVersion(BaseModel):
     plan = models.ForeignKey(CommissionPlan, on_delete=models.CASCADE, related_name="versions")
     effective_from = models.DateField()
-    metric = models.CharField(max_length=15, choices=PlanMetric.choices)
     american_threshold_percent = models.DecimalField(
         max_digits=5, decimal_places=2, null=True, blank=True)
     created_by = models.ForeignKey(

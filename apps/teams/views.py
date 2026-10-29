@@ -160,20 +160,14 @@ def _threshold(raw, metric) -> Optional[Decimal]:
     return d.quantize(Decimal("0.01"))
 
 
-def _metric_threshold(plan, body, month) -> tuple:
-    """Metric/threshold from the body, else carried over from the version effective at ``month``."""
-    prior = version_for(plan, month)
-    if "metric" in body:
-        metric = _metric(body["metric"])
-    elif prior is not None:
-        metric = prior.metric
-    else:
-        raise _Invalid("Invalid metric.")
+def _plan_threshold(plan, body, month) -> Optional[Decimal]:
+    """Threshold from the body, else carried over from the version effective at ``month``."""
     if "american_threshold_percent" in body:
         raw = body["american_threshold_percent"]
     else:
+        prior = version_for(plan, month)
         raw = prior.american_threshold_percent if prior is not None else None
-    return metric, _threshold(raw, metric)
+    return _threshold(raw, plan.metric)
 
 
 def _get_plan(request, uuid):
@@ -218,6 +212,10 @@ def plans(request):
             if params["kind"] not in PlanKind.values:
                 return _invalid("Invalid kind.")
             qs = qs.filter(kind=params["kind"])
+        if params.get("metric"):
+            if params["metric"] not in PlanMetric.values:
+                return _invalid("Invalid metric.")
+            qs = qs.filter(metric=params["metric"])
         for field in ("department", "team", "user"):
             if params.get(field):
                 uid = _uuid(params[field])
@@ -239,18 +237,18 @@ def plans(request):
         tiers = _tiers(body.get("tiers"))
         try:
             with transaction.atomic():
-                plan = CommissionPlan.objects.filter(**target).first()
+                plan = CommissionPlan.objects.filter(metric=metric, **target).first()
                 if plan is None:
-                    plan = CommissionPlan.objects.create(kind=kind, **target)
+                    plan = CommissionPlan.objects.create(kind=kind, metric=metric, **target)
                 elif plan.is_active:
-                    return error("This target already has a commission plan.", "duplicate_plan", 400)
+                    return error("This target already has a commission plan for this metric.", "duplicate_plan", 400)
                 else:  # archived plan for this target: reactivate it
                     plan.is_active = True
                     plan.save(update_fields=["is_active", "updated_at"])
-                save_version(plan, effective_from, tiers, user,
-                             metric=metric, threshold=threshold)
+                save_version(plan, effective_from, tiers, user, threshold=threshold)
         except IntegrityError:
-            return error("This target already has a commission plan.", "duplicate_plan", 400)
+            return error("This target already has a commission plan for this metric.",
+                         "duplicate_plan", 400)
     except _Invalid as e:
         return _invalid(str(e))
     except PlanError as e:
@@ -280,14 +278,16 @@ def plan_detail(request, uuid):
     if body is None:
         return _invalid("Body must be an object.")
     try:
-        if "metric" not in body and "american_threshold_percent" not in body:
+        if "metric" in body:
+            raise _Invalid("The metric of a plan cannot be changed.")
+        if "american_threshold_percent" not in body:
             raise _Invalid("Nothing to update.")
         if "effective_from" not in body or "tiers" not in body:
-            raise _Invalid("Changing the metric or threshold requires 'effective_from' and 'tiers'.")
+            raise _Invalid("Changing the threshold requires 'effective_from' and 'tiers'.")
         effective_from = _month(body["effective_from"])
-        metric, threshold = _metric_threshold(plan, body, effective_from)
+        threshold = _plan_threshold(plan, body, effective_from)
         tiers = _tiers(body["tiers"])
-        save_version(plan, effective_from, tiers, user, metric=metric, threshold=threshold)
+        save_version(plan, effective_from, tiers, user, threshold=threshold)
     except _Invalid as e:
         return _invalid(str(e))
     except PlanError as e:
@@ -316,9 +316,9 @@ def plan_version(request, uuid, month):
             return _invalid("Body must be an object.")
         if month_date < month_start(date.today()):
             raise PlanError("past_month", "Cannot change a plan for a past month.")
-        metric, threshold = _metric_threshold(plan, body, month_date)
+        threshold = _plan_threshold(plan, body, month_date)
         version = save_version(plan, month_date, _tiers(body.get("tiers")), user,
-                               metric=metric, threshold=threshold)
+                               threshold=threshold)
     except _Invalid as e:
         return _invalid(str(e))
     except PlanError as e:
@@ -475,10 +475,10 @@ def my(request):
     active = visible_teams(user).filter(is_active=True).select_related("department", "leader")
     led = active.filter(leader=user).order_by("name")
     member = active.filter(agents=user).order_by("name")
-    personal = personal_version_for(user, today)
+    personal = [v for m in PlanMetric.values if (v := personal_version_for(user, today, m))]
     return Response({
         "teams_led": [team_data(t, user) for t in led],
         "teams_member": [team_data(t, user) for t in member],
-        "personal_plan": plan_data(personal.plan, user, today) if personal else None,
+        "personal_plans": [plan_data(v.plan, user, today) for v in personal],
         "team_plans": [plan_data(v.plan, user, today) for _, v in team_versions_for_leader(user, today)],
     })

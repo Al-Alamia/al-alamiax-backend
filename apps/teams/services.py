@@ -7,7 +7,7 @@ from django.db import transaction
 from apps.notifications.services import notify
 from apps.notifications.types import NotificationKinds
 
-from .types import PlanKind, PlanMetric, TierKind, TierVariant
+from .types import AMOUNT_METRICS, PlanKind, TierKind, TierVariant
 
 MAX_TIERS_PER_VARIANT = 20
 CENT = Decimal("0.01")
@@ -76,7 +76,7 @@ def validate_tiers(tiers, metric, threshold):
     def err(i, variant, message):
         errors.append({"index": i, "variant": str(variant), "message": message})
 
-    is_count = metric != PlanMetric.SALES_AMOUNT
+    is_count = metric not in AMOUNT_METRICS
     step = Decimal("1") if is_count else CENT
     variants = {TierVariant.NORMAL.value: [], TierVariant.AMERICAN.value: []}
 
@@ -193,21 +193,25 @@ def _active_plan_version(month, **target):
     return version_for(plan, month) if plan else None
 
 
-def personal_version_for(user, month):
-    version = _active_plan_version(month, kind=PlanKind.PERSONAL, user=user)
+def personal_version_for(user, month, metric):
+    version = _active_plan_version(month, kind=PlanKind.PERSONAL, user=user, metric=metric)
     if version is None and user.department_id:
         version = _active_plan_version(
-            month, kind=PlanKind.PERSONAL, department_id=user.department_id)
+            month, kind=PlanKind.PERSONAL, department_id=user.department_id, metric=metric)
     return version
 
 
-def team_versions_for_leader(user, month):
-    from .models import Team
+def team_versions_for_leader(user, month, metric=None):
+    from .models import CommissionPlan, Team
+    extra = {} if metric is None else {"metric": metric}
     result = []
     for team in Team.objects.filter(leader=user, is_active=True).order_by("name"):
-        version = _active_plan_version(month, kind=PlanKind.TEAM, team=team)
-        if version is not None:
-            result.append((team, version))
+        plans = CommissionPlan.objects.filter(
+            is_active=True, kind=PlanKind.TEAM, team=team, **extra).order_by("metric")
+        for plan in plans:
+            version = version_for(plan, month)
+            if version is not None:
+                result.append((team, version))
     return result
 
 
@@ -218,20 +222,20 @@ def team_total(team, values_by_user_id):
     return sum((Decimal(values_by_user_id.get(i, 0)) for i in set(ids)), Decimal("0"))
 
 
-def save_version(plan, month, tiers, by, *, metric, threshold, today=None):
+def save_version(plan, month, tiers, by, *, threshold, today=None):
     from .models import PlanVersion, Tier
     month = month_start(month)
     if month < month_start(today or date.today()):
         raise PlanError("past_month", "Cannot change a plan for a past month.")
-    normalized = validate_tiers(tiers, metric, threshold)
+    normalized = validate_tiers(tiers, plan.metric, threshold)
     with transaction.atomic():
         version, created = PlanVersion.objects.get_or_create(
             plan=plan, effective_from=month,
-            defaults={"created_by": by, "metric": metric, "american_threshold_percent": threshold})
+            defaults={"created_by": by, "american_threshold_percent": threshold})
         if not created:
             version.tiers.all().delete()
-            version.metric, version.american_threshold_percent = metric, threshold
-            version.save(update_fields=["metric", "american_threshold_percent", "updated_at"])
+            version.american_threshold_percent = threshold
+            version.save(update_fields=["american_threshold_percent", "updated_at"])
         Tier.objects.bulk_create([Tier(version=version, **t) for t in normalized])
         if plan.kind == PlanKind.TEAM and plan.team.leader_id:
             notify([plan.team.leader],

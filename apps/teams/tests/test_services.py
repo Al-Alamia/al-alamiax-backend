@@ -33,14 +33,14 @@ class ResolutionTests(TestCase):
         make_version(dp, date(2026, 1, 1), FLAT)
         up = make_plan(PlanKind.PERSONAL, user=self.u)
         uv = make_version(up, date(2026, 1, 1), FLAT)
-        self.assertEqual(services.personal_version_for(self.u, date(2026, 3, 9)), uv)
+        self.assertEqual(services.personal_version_for(self.u, date(2026, 3, 9), "lead_count"), uv)
 
     def test_future_only_user_plan_falls_back_to_department(self):
         dp = make_plan(PlanKind.PERSONAL, department=self.dept)
         dv = make_version(dp, date(2026, 1, 1), FLAT)
         up = make_plan(PlanKind.PERSONAL, user=self.u)
         make_version(up, date(2027, 1, 1), FLAT)
-        self.assertEqual(services.personal_version_for(self.u, date(2026, 12, 1)), dv)
+        self.assertEqual(services.personal_version_for(self.u, date(2026, 12, 1), "lead_count"), dv)
 
     def test_archived_user_plan_ignored(self):
         dp = make_plan(PlanKind.PERSONAL, department=self.dept)
@@ -49,18 +49,18 @@ class ResolutionTests(TestCase):
         make_version(up, date(2026, 1, 1), FLAT)
         up.is_active = False
         up.save()
-        self.assertEqual(services.personal_version_for(self.u, date(2026, 2, 1)), dv)
+        self.assertEqual(services.personal_version_for(self.u, date(2026, 2, 1), "lead_count"), dv)
 
     def test_no_plans_returns_none(self):
-        self.assertIsNone(services.personal_version_for(self.u, date(2026, 2, 1)))
+        self.assertIsNone(services.personal_version_for(self.u, date(2026, 2, 1), "lead_count"))
 
     def test_version_chosen_by_month(self):
         up = make_plan(PlanKind.PERSONAL, user=self.u)
         nov = make_version(up, date(2026, 11, 1), FLAT)
         jan = make_version(up, date(2027, 1, 1), FLAT)
-        self.assertEqual(services.personal_version_for(self.u, date(2026, 12, 20)), nov)
-        self.assertEqual(services.personal_version_for(self.u, date(2027, 1, 5)), jan)
-        self.assertIsNone(services.personal_version_for(self.u, date(2026, 10, 5)))
+        self.assertEqual(services.personal_version_for(self.u, date(2026, 12, 20), "lead_count"), nov)
+        self.assertEqual(services.personal_version_for(self.u, date(2027, 1, 5), "lead_count"), jan)
+        self.assertIsNone(services.personal_version_for(self.u, date(2026, 10, 5), "lead_count"))
 
     def test_team_versions_for_leader(self):
         a = make_team(self.dept, "A", leader=self.u)
@@ -98,23 +98,23 @@ class SaveVersionTests(TestCase):
 
     def test_past_month_rejected(self):
         with self.assertRaises(PlanError) as cm:
-            services.save_version(self.plan, date(2026, 10, 1), FLAT, self.by, metric="lead_count", threshold=None, today=self.today)
+            services.save_version(self.plan, date(2026, 10, 1), FLAT, self.by, threshold=None, today=self.today)
         self.assertEqual(cm.exception.code, "past_month")
 
     def test_same_month_replaces_tiers(self):
-        services.save_version(self.plan, date(2026, 11, 1), FLAT, self.by, metric="lead_count", threshold=None, today=self.today)
-        v = services.save_version(self.plan, date(2026, 11, 20), FLAT2, self.by, metric="lead_count", threshold=None, today=self.today)
+        services.save_version(self.plan, date(2026, 11, 1), FLAT, self.by, threshold=None, today=self.today)
+        v = services.save_version(self.plan, date(2026, 11, 20), FLAT2, self.by, threshold=None, today=self.today)
         self.assertEqual(PlanVersion.objects.filter(plan=self.plan).count(), 1)
         self.assertEqual([t.value for t in v.tiers.all()], [Decimal("250")])
 
     def test_future_month_creates_new_version(self):
-        services.save_version(self.plan, date(2026, 11, 1), FLAT, self.by, metric="lead_count", threshold=None, today=self.today)
-        v = services.save_version(self.plan, date(2026, 12, 1), FLAT2, self.by, metric="lead_count", threshold=None, today=self.today)
+        services.save_version(self.plan, date(2026, 11, 1), FLAT, self.by, threshold=None, today=self.today)
+        v = services.save_version(self.plan, date(2026, 12, 1), FLAT2, self.by, threshold=None, today=self.today)
         self.assertEqual(v.effective_from, date(2026, 12, 1))
         self.assertEqual(PlanVersion.objects.filter(plan=self.plan).count(), 2)
 
     def test_team_plan_notifies_leader_once(self):
-        services.save_version(self.plan, date(2026, 11, 1), FLAT, self.by, metric="lead_count", threshold=None, today=self.today)
+        services.save_version(self.plan, date(2026, 11, 1), FLAT, self.by, threshold=None, today=self.today)
         n = Notification.objects.get()
         self.assertEqual(n.kind, "team")
         self.assertTrue(n.link.startswith("/teams?tab=plans&plan="))
@@ -123,12 +123,12 @@ class SaveVersionTests(TestCase):
 
     def test_personal_plan_does_not_notify(self):
         p = make_plan(PlanKind.PERSONAL, department=self.dept)
-        services.save_version(p, date(2026, 11, 1), FLAT, self.by, metric="lead_count", threshold=None, today=self.today)
+        services.save_version(p, date(2026, 11, 1), FLAT, self.by, threshold=None, today=self.today)
         self.assertEqual(Notification.objects.count(), 0)
 
     def test_invalid_tiers_leave_db_unchanged(self):
         with self.assertRaises(PlanError) as cm:
-            services.save_version(self.plan, date(2026, 11, 1), [], self.by, metric="lead_count", threshold=None, today=self.today)
+            services.save_version(self.plan, date(2026, 11, 1), [], self.by, threshold=None, today=self.today)
         self.assertEqual(cm.exception.code, "invalid_tiers")
         self.assertEqual(PlanVersion.objects.count(), 0)
         self.assertEqual(Notification.objects.count(), 0)

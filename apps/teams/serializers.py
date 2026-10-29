@@ -50,7 +50,7 @@ def _threshold(version):
 
 def version_data(version) -> dict:
     return {"effective_from": f"{version.effective_from:%Y-%m}",
-            "metric": version.metric,
+            "metric": version.plan.metric,
             "american_threshold_percent": _threshold(version),
             "tiers": [tier_data(t) for t in version.tiers.all()]}
 
@@ -61,7 +61,7 @@ def plan_data(plan, viewer, month) -> dict:
         "uuid": str(plan.uuid),
         "kind": plan.kind,
         "target": _target(plan),
-        "metric": current.metric if current else None,
+        "metric": plan.metric,
         "american_threshold_percent": _threshold(current) if current else None,
         "is_active": plan.is_active,
         "current_version": version_data(current) if current else None,

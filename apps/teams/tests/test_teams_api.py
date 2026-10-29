@@ -268,9 +268,9 @@ class MetaMyTests(TeamsApiBase):
         self.assertEqual(r.status_code, 200)
         self.assertEqual([t["name"] for t in r.data["teams_led"]], ["Sales Team"])
         self.assertEqual(r.data["teams_member"], [])
-        self.assertEqual(r.data["personal_plan"]["uuid"], str(dp.uuid))
-        self.assertEqual(r.data["personal_plan"]["target"]["type"], "department")
-        self.assertFalse(r.data["personal_plan"]["can_edit"])
+        self.assertEqual([p["uuid"] for p in r.data["personal_plans"]], [str(dp.uuid)])
+        self.assertEqual(r.data["personal_plans"][0]["target"]["type"], "department")
+        self.assertFalse(r.data["personal_plans"][0]["can_edit"])
         self.assertEqual([p["uuid"] for p in r.data["team_plans"]], [str(tp.uuid)])
         plan = r.data["team_plans"][0]
         self.assertEqual(plan["versions"], ["2020-06", "2020-01"])
@@ -281,7 +281,7 @@ class MetaMyTests(TeamsApiBase):
     def test_my_member_and_no_plan(self):
         r = self.get(self.a1, MY)
         self.assertEqual([t["name"] for t in r.data["teams_member"]], ["Sales Team"])
-        self.assertEqual((r.data["teams_led"], r.data["personal_plan"], r.data["team_plans"]), ([], None, []))
+        self.assertEqual((r.data["teams_led"], r.data["personal_plans"], r.data["team_plans"]), ([], [], []))
 
     def test_plan_can_edit_for_manager(self):
         from apps.teams.serializers import plan_data
