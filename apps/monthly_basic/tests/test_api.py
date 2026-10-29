@@ -104,6 +104,12 @@ class ApiTests(BaseUserTestCase):
         r = self.client.patch(f"{self.url}?period={self.prev}", {"kpi": "-5"}, format="json")
         self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))
 
+    def test_detail_not_included_is_read_only(self):
+        r = self.get(self.hr, f"users/{self.nosal.uuid}")
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.data["can_edit"])
+        self.assertFalse(r.data["can_give"])
+
     def test_manager_other_department_404(self):
         for u in (self.other, self.superuser):
             url = f"users/{u.uuid}"

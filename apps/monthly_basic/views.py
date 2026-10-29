@@ -129,7 +129,8 @@ def _detail(viewer, target, key, start, end):
     values = services.compute(target, key, record)
     closed = PeriodClose.objects.filter(period=key).exists()
     is_given = record is not None and record.status == BasicStatus.GIVEN
-    can_edit = bool(can_edit_basic(viewer, target) and not closed and not is_given)
+    included = services.included_users(key).filter(pk=target.pk).exists()
+    can_edit = bool(included and can_edit_basic(viewer, target) and not closed and not is_given)
     return {
         "period": key, "start": start.isoformat(), "end": end.isoformat(),
         "period_closed": closed, "user": user_data(target),

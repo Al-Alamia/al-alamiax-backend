@@ -18,7 +18,7 @@ def _money(**kw):
 
 
 class MonthlyBasic(BaseModel):
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="monthly_basics")
+    user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="monthly_basics")
     period = models.CharField(max_length=7)
 
     kpi = _money()
