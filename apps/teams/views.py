@@ -1,7 +1,10 @@
+import re
 import uuid as uuid_lib
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from typing import Optional
 
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -11,17 +14,21 @@ from apps.attendance.views import error
 from apps.users.models import Department, User
 from apps.users.types import UserTypes
 
+from .models import CommissionPlan, Team
 from .permissions import (
-    can_manage_department, can_manage_team, is_top, manageable_departments,
-    visible_teams,
+    can_manage_department, can_manage_plan, can_manage_team, is_top, manageable_departments,
+    visible_plans, visible_teams,
 )
-from .serializers import plan_data, team_data
+from .serializers import plan_data, team_data, version_data
 from .services import (
-    PlanError, create_team, personal_version_for, set_members, team_versions_for_leader,
-    update_team,
+    PlanError, create_team, evaluate_tiers, personal_version_for, save_version,
+    set_members, team_versions_for_leader, update_team, validate_tiers, version_for,
 )
+from .types import PlanKind, PlanMetric
 
 MAX_MEMBERS_PER_CALL = 200
+MAX_TIERS_PER_CALL = 100
+MONTH_RE = re.compile(r"^(\d{4})-(0[1-9]|1[0-2])$")
 
 
 class _Invalid(Exception):
@@ -98,6 +105,219 @@ def _bool(raw, field) -> bool:
 
 def _get_team(request, uuid):
     return visible_teams(request.user).select_related("department", "leader").filter(uuid=uuid).first()
+
+
+def _plan_error(e: PlanError) -> Response:
+    resp = error(e.message, e.code, 400)
+    if e.errors:
+        resp.data["errors"] = e.errors
+    return resp
+
+
+def _month(raw) -> date:
+    m = MONTH_RE.match(raw) if isinstance(raw, str) else None
+    if not m:
+        raise _Invalid("Month must be formatted YYYY-MM.")
+    return date(int(m.group(1)), int(m.group(2)), 1)
+
+
+def _number(raw, field) -> Decimal:
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+        raise _Invalid(f"'{field}' must be a number.")
+    try:
+        d = Decimal(str(raw).strip())
+    except InvalidOperation:
+        raise _Invalid(f"'{field}' must be a number.")
+    if not d.is_finite() or d < 0:
+        raise _Invalid(f"'{field}' must be a number of 0 or more.")
+    return d
+
+
+def _tiers(raw) -> list:
+    if not isinstance(raw, list) or len(raw) > MAX_TIERS_PER_CALL:
+        raise _Invalid(f"'tiers' must be a list of at most {MAX_TIERS_PER_CALL} tiers.")
+    return raw
+
+
+def _metric(raw) -> str:
+    if raw not in PlanMetric.values:
+        raise _Invalid("Invalid metric.")
+    return raw
+
+
+def _threshold(raw, metric) -> Optional[Decimal]:
+    if raw in (None, ""):
+        return None
+    d = _number(raw, "american_threshold_percent")
+    if d > 100 or d != d.quantize(Decimal("0.01")):
+        raise _Invalid("'american_threshold_percent' must be between 0 and 100 (2 decimals).")
+    if metric != PlanMetric.LEAD_COUNT:
+        raise _Invalid("An American threshold is only supported for the lead_count metric.")
+    return d.quantize(Decimal("0.01"))
+
+
+def _get_plan(request, uuid):
+    return (visible_plans(request.user)
+            .select_related("department", "user", "team").filter(uuid=uuid).first())
+
+
+def _plan_target(body) -> tuple:
+    """Returns (kind, target kwargs, department_id used for authorization)."""
+    kind = body.get("kind")
+    if kind not in PlanKind.values:
+        raise _Invalid("Invalid kind.")
+    given = [k for k in ("department", "user", "team") if body.get(k)]
+    if kind == PlanKind.TEAM:
+        if given != ["team"]:
+            raise _Invalid("A team plan needs exactly a 'team'.")
+        uid = _uuid(body["team"])
+        team = Team.objects.filter(uuid=uid).first() if uid else None
+        if team is None:
+            raise _Invalid("Invalid team.")
+        return kind, {"team": team}, team.department_id
+    if given == ["department"]:
+        dept = _department(body["department"])
+        return kind, {"department": dept}, dept.pk
+    if given == ["user"]:
+        target = _user(body["user"])
+        return kind, {"user": target}, target.department_id
+    raise _Invalid("A personal plan needs exactly one of 'department' or 'user'.")
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def plans(request):
+    user, today = request.user, date.today()
+    if request.method == "GET":
+        params = request.query_params
+        qs = visible_plans(user).select_related("department", "user", "team")
+        privileged = is_top(user) or user.role == UserTypes.MANAGER
+        if not (privileged and params.get("include_archived") in ("1", "true")):
+            qs = qs.filter(is_active=True)
+        if params.get("kind"):
+            if params["kind"] not in PlanKind.values:
+                return _invalid("Invalid kind.")
+            qs = qs.filter(kind=params["kind"])
+        for field in ("department", "team", "user"):
+            if params.get(field):
+                uid = _uuid(params[field])
+                if uid is None:
+                    return _invalid(f"Invalid {field}.")
+                qs = qs.filter(**{f"{field}__uuid": uid})
+        return Response([plan_data(p, user, today) for p in qs.order_by("created_at")])
+
+    body = _body(request)
+    if body is None:
+        return _invalid("Body must be an object.")
+    try:
+        kind, target, auth_dept_id = _plan_target(body)
+        if not can_manage_department(user, auth_dept_id):
+            return _forbidden()
+        metric = _metric(body.get("metric"))
+        threshold = _threshold(body.get("american_threshold_percent"), metric)
+        effective_from = _month(body.get("effective_from"))
+        tiers = _tiers(body.get("tiers"))
+        try:
+            with transaction.atomic():
+                plan = CommissionPlan.objects.create(
+                    kind=kind, metric=metric, american_threshold_percent=threshold, **target)
+                save_version(plan, effective_from, tiers, user)
+        except IntegrityError:
+            return error("This target already has a commission plan.", "duplicate_plan", 400)
+    except _Invalid as e:
+        return _invalid(str(e))
+    except PlanError as e:
+        return _plan_error(e)
+    return Response(plan_data(plan, user, today), status=201)
+
+
+@api_view(["GET", "PATCH", "DELETE"])
+@permission_classes([IsAuthenticated])
+def plan_detail(request, uuid):
+    user, today = request.user, date.today()
+    plan = _get_plan(request, uuid)
+    if plan is None:
+        return _not_found()
+    if request.method == "GET":
+        return Response(plan_data(plan, user, today))
+    if not can_manage_plan(user, plan):
+        return _forbidden()
+    if request.method == "DELETE":
+        plan.is_active = False
+        plan.save(update_fields=["is_active", "updated_at"])
+        return Response(plan_data(plan, user, today))
+
+    body = _body(request)
+    if body is None:
+        return _invalid("Body must be an object.")
+    try:
+        if "metric" not in body and "american_threshold_percent" not in body:
+            raise _Invalid("Nothing to update.")
+        if "effective_from" not in body or "tiers" not in body:
+            raise _Invalid("Changing the metric or threshold requires 'effective_from' and 'tiers'.")
+        metric = _metric(body["metric"]) if "metric" in body else plan.metric
+        raw_threshold = (body["american_threshold_percent"] if "american_threshold_percent" in body
+                         else plan.american_threshold_percent)
+        threshold = _threshold(raw_threshold, metric)
+        effective_from = _month(body["effective_from"])
+        tiers = _tiers(body["tiers"])
+        plan.metric, plan.american_threshold_percent = metric, threshold
+        with transaction.atomic():
+            plan.save(update_fields=["metric", "american_threshold_percent", "updated_at"])
+            save_version(plan, effective_from, tiers, user)
+    except _Invalid as e:
+        return _invalid(str(e))
+    except PlanError as e:
+        return _plan_error(e)
+    return Response(plan_data(plan, user, today))
+
+
+@api_view(["GET", "PUT"])
+@permission_classes([IsAuthenticated])
+def plan_version(request, uuid, month):
+    user = request.user
+    plan = _get_plan(request, uuid)
+    if plan is None:
+        return _not_found()
+    if request.method == "PUT" and not can_manage_plan(user, plan):
+        return _forbidden()
+    try:
+        month_date = _month(month)
+        if request.method == "GET":
+            version = version_for(plan, month_date)
+            return Response(version_data(version)) if version else _not_found()
+        body = _body(request)
+        if body is None:
+            return _invalid("Body must be an object.")
+        version = save_version(plan, month_date, _tiers(body.get("tiers")), user)
+    except _Invalid as e:
+        return _invalid(str(e))
+    except PlanError as e:
+        return _plan_error(e)
+    return Response(version_data(version))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def plan_preview(request):
+    body = _body(request)
+    if body is None:
+        return _invalid("Body must be an object.")
+    try:
+        metric = _metric(body.get("metric"))
+        threshold = _threshold(body.get("american_threshold_percent"), metric)
+        tiers = _tiers(body.get("tiers"))
+        value = _number(body.get("value"), "value")
+        share = (_number(body["american_share"], "american_share")
+                 if body.get("american_share") is not None else None)
+        normalized = validate_tiers(tiers, metric, threshold)
+        result = evaluate_tiers(normalized, value, share, threshold)
+    except _Invalid as e:
+        return _invalid(str(e))
+    except PlanError as e:
+        return _plan_error(e)
+    return Response({"amount": str(result.amount), "tier_index": result.tier_index,
+                     "variant": result.variant})
 
 
 @api_view(["GET", "POST"])
