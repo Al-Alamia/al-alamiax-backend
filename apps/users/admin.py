@@ -51,21 +51,17 @@ class UserResource(resources.ModelResource):
         column_name='basic_salary',
         attribute='usercommissiondetails__basic'
     )
-    set_global_commission_rules = fields.Field(
-        column_name='set_global_commission_rules',
-        attribute='usercommissiondetails__set_global_commission_rules'
-    )
 
     class Meta:
         model = User
         import_id_fields = ('username',)
         fields = (
             'username', 'password','profile__phone', 'is_active', "first_name", "last_name", 'project_name', 'role', 'title', 'department_name', 'crm_username', 
-            'basic_salary', 'set_global_commission_rules'
+            'basic_salary'
         )
         export_order = (
             'username', 'password','profile__phone', 'is_active', "first_name", "last_name", 'project_name', 'role', 'title', 'department_name', 'crm_username', 
-            'basic_salary', 'set_global_commission_rules'
+            'basic_salary'
         )
         
     def before_save_instance(self, instance, using_transactions, dry_run):

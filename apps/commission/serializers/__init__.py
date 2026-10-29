@@ -5,8 +5,6 @@ from rest_framework.serializers import Serializer
 from apps.users.models import User
 from apps.commission.models import (
     CoinChanger,
-    TargetSlice,
-    Team,
     UserCommissionDetails,
     BasicRecord ,
     Commission ,
@@ -28,46 +26,7 @@ class CoinChangerSerializer(ModelSerializer):
 
 
 
-class TargetSliceSerializer(ModelSerializer):
-    department = DepartmentSerializer()
-    class Meta:
-        model = TargetSlice
-        fields = [
-            "uuid",
-            "name",
-            "min_value",
-            "max_value",
-            "money",
-            "is_global",
-            "is_money_percentage",
-            "department",
-        ]
-
-
-class TeamSerializer(ModelSerializer):
-    commission_rules = TargetSliceSerializer(many=True , read_only=True)
-    leader = UserSerializer(read_only=True)
-    agents = UserSerializer(many=True , read_only=True)
-    class Meta:
-        model = Team
-        fields = [
-            "uuid",
-            "name",
-            "leader",
-            "agents",
-            "commission_rules",
-        ]
-        many_to_many_models = {
-            "commission_rules": ManyToManyField("commission_rules",TargetSlice,'uuid') ,
-            "agents": ManyToManyField("agents",User,'uuid') ,
-        }
-        foreign_models = {
-            "leader": ForeignField("leader",User,'uuid') ,
-        }
-
-
 class UserCommissionDetailsSerializer(ModelSerializer):
-    commission_rules = TargetSliceSerializer(many=True , read_only=True)
     user = UserSerializer(read_only=True)
     class Meta :
         model = UserCommissionDetails
@@ -75,12 +34,7 @@ class UserCommissionDetailsSerializer(ModelSerializer):
             "uuid",
             "user",
             "basic",
-            "set_global_commission_rules",
-            "commission_rules",
         ]
-        many_to_many_models = {
-            "commission_rules": ManyToManyField("commission_rules",TargetSlice,'uuid') ,
-        }
         
 
 

@@ -5,7 +5,8 @@ from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST
 from rest_framework.request import Request
 from apps.users.models import Lead , LeadUpdate , User 
 from apps.users.types import LeadUpdateTypes
-from apps.commission.models import Additional , Team
+from apps.commission.models import Additional
+from apps.teams.models import Team
 from apps.users.serializers import  LeadSerializer
 from apps.users.views import IsAuthenticated , IsOwner , IsSuperUser
 from django.db import connection 
@@ -196,7 +197,7 @@ def user_leads(request:Request):
     )
     
     teams_details = []
-    teams = Team.objects.filter(leader__uuid= user_uuid)
+    teams = Team.objects.filter(leader__uuid= user_uuid, is_active=True)
     for team in teams:
         teams_details.append({
             "name" : team.name,

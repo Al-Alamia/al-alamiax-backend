@@ -1,8 +1,6 @@
 from django.contrib import admin
 from .models import (
-    Team , 
     CoinChanger , 
-    TargetSlice , 
     UserCommissionDetails , 
     BasicRecord,
     Commission , 
@@ -12,52 +10,6 @@ from .models import (
 from utils.admin_utils import FieldSets
 
 # Register your models here.
-
-
-class TargetSliceAdminSite(admin.ModelAdmin):
-    list_display = ["name","min_value","max_value", "money" , "is_global" , 'is_money_percentage' , 'department']
-    list_filter = ["is_global" , "department" , "is_money_percentage"]
-    readonly_fields = ['uuid',"created_at","updated_at"]
-    search_fields = ['min_value', 'max_value' , "money"] + ["name"] + ['uuid',"created_at","updated_at"]
-    fieldsets = FieldSets([
-            'TargetSlice Fields' ,
-            'Other Fields'
-        ],[
-            [
-                "name",
-                'min_value',
-                'max_value',
-                'money',
-                'is_global',
-                'is_money_percentage',
-                'department',
-            ],[
-                "uuid" ,
-                "created_at",
-                "updated_at"
-            ]
-    ]).fieldsets
- 
-class TeamAdminSite(admin.ModelAdmin):
-    list_display = ["name","leader"]
-    # list_filter = ["is_global" ]
-    readonly_fields = ['uuid',"created_at","updated_at"]
-    search_fields = ['name', 'leader__username' , "agents__username"]   + ['uuid',"created_at","updated_at"]
-    fieldsets = FieldSets([
-            'Team Fields' ,
-            'Other Fields'
-        ],[
-            [
-                'name',
-                'leader',
-                'agents',
-                'commission_rules',
-            ],[
-                "uuid" ,
-                "created_at",
-                "updated_at"
-            ]
-    ]).fieldsets
 
 
 class CoinChangerAdminSite(admin.ModelAdmin):
@@ -81,8 +33,7 @@ class CoinChangerAdminSite(admin.ModelAdmin):
 
 
 class UserCommissionDetailsAdminSite(admin.ModelAdmin):
-    list_display = ["user","basic","set_global_commission_rules"]
-    list_filter = ["set_global_commission_rules"]
+    list_display = ["user","basic"]
     readonly_fields = ['uuid',"created_at","updated_at"]
     search_fields = ['user__username']   + ['uuid',"created_at","updated_at"]
     fieldsets = FieldSets([
@@ -92,9 +43,6 @@ class UserCommissionDetailsAdminSite(admin.ModelAdmin):
             [
                 'user',
                 'basic',
-                'set_global_commission_rules',
-                'commission_rules',
-
             ],[
                 "uuid" ,
                 "created_at",
@@ -194,9 +142,7 @@ class AdditionalAdminSite(admin.ModelAdmin):
     ]).fieldsets
 
 
-admin.site.register(Team , TeamAdminSite)
 admin.site.register(CoinChanger, CoinChangerAdminSite)
-admin.site.register(TargetSlice , TargetSliceAdminSite)
 admin.site.register(UserCommissionDetails , UserCommissionDetailsAdminSite)
 admin.site.register(BasicRecord , BasicRecordAdminSite)
 admin.site.register(Commission , CommissionAdminSite)

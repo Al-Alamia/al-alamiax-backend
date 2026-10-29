@@ -9,57 +9,16 @@ from apps.treasury.models import TreasuryOutcome
 # Create your models here.
 
 
-class TargetSlice(BaseModel):
-    name = models.CharField(verbose_name="Name", max_length=150)
-    min_value = models.PositiveIntegerField(verbose_name="Min Value")
-    max_value = models.PositiveIntegerField(verbose_name="Max Value" )
-    money = models.CharField(verbose_name="Commission", max_length=100)
-    is_money_percentage = models.BooleanField(verbose_name="Set Commession as Percentage")
-    is_global = models.BooleanField(verbose_name="Set Global Rule")
-    department = models.ForeignKey(Department, verbose_name="Department", on_delete=models.CASCADE)
-    
-    class Meta:
-        verbose_name = "Target Slice"
-        verbose_name_plural = "Target Slices"
- 
-    def save(self, *args , **kwargs) -> None:
-        if self.min_value >= self.max_value :
-            raise ValidationError("Max Value must be greater than Min Value")
-        return super().save(*args , **kwargs)
-
-    def is_achieved(self,count:int):
-        return count > self.min_value
-        
-    def is_in_range(self,count:int):
-        return self.min_value < count < self.max_value
-
-    def __str__(self):
-        return f"{self.min_value} - {self.max_value} : {self.money} {'%' if self.is_money_percentage else 'EGP'}"
-
-
-
 class UserCommissionDetails(BaseModel):
     user = models.OneToOneField(User,verbose_name="User" , on_delete=models.CASCADE)
     basic = models.PositiveIntegerField(verbose_name="Basic Salary"  , default= 0)
-    set_global_commission_rules = models.BooleanField(verbose_name="Set Global Rule" , default=True)
-    commission_rules = models.ManyToManyField(TargetSlice,verbose_name="Commission Target Slices" , blank=True , limit_choices_to={"is_global":False})
 
     def __str__(self):
-        return f"{self.user} - {self.set_global_commission_rules}"
+        return f"{self.user} - {self.basic}"
 
     class Meta:
         verbose_name = 'User Commission Details'
         verbose_name_plural = 'User Commission Details'
-
-
-
-class Team(BaseModel):
-    name = models.CharField(verbose_name="Team Name", max_length=100)
-    leader =  models.ForeignKey(User,verbose_name="Leader" , related_name="team_leader", on_delete=models.SET_NULL , null=True)
-    agents = models.ManyToManyField(User,verbose_name="Agents" , related_name="team_agents")
-    commission_rules = models.ManyToManyField(TargetSlice,verbose_name="Commission Rules")
-    def __str__(self):
-        return self.name
 
 
 
@@ -135,7 +94,6 @@ def create_user_commission_details(sender, instance:User, created ,**kwargs):
         details = UserCommissionDetails.objects.create(
             user=instance ,
             basic=kwargs.get('basic',0),
-            set_global_commission_rules=kwargs.get('set_global_commission_rules',True),
             )
         details.save()
 
@@ -174,11 +132,8 @@ def create_Outcome_record_salary(sender, instance:Commission, created ,**kwargs)
         details.save()
 
 
-pre_save.connect(create_update_history,sender=Team)
 pre_save.connect(create_update_history,sender=CoinChanger)
-pre_save.connect(create_update_history, sender=TargetSlice)
 pre_save.connect(create_update_history, sender=UserCommissionDetails)
-pre_save.connect(create_update_history, sender=Team)
 pre_save.connect(create_update_history, sender=CoinChanger)
 pre_save.connect(create_update_history, sender=BasicRecord)
 pre_save.connect(create_update_history, sender=Commission)

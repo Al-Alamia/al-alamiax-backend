@@ -6,3 +6,4 @@ class NotificationKinds(models.TextChoices):
     REQUEST = ("request", "Request")
     PENALTY = ("penalty", "Penalty")
     DEVICE = ("device", "Device")
+    TEAM = ("team", "Team")

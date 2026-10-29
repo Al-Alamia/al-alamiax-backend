@@ -1,5 +1,6 @@
 import importlib
 
+from apps.teams.tests.factories import make_team
 from apps.users.lead_roles import resolve_role
 from apps.users.tests.lead_fixtures import LeadPipelineTestCase
 
@@ -21,6 +22,18 @@ class ResolveRoleTests(LeadPipelineTestCase):
         r = resolve_role(self.sales_leader)
         self.assertEqual(r.level, "leader")
         self.assertIn(self.sales_agent.uuid, r.team_member_ids)
+
+    def test_archived_team_does_not_grant_leader(self):
+        self.sales_team.is_active = False
+        self.sales_team.save()
+        self.assertEqual(resolve_role(self.sales_leader).level, "agent")
+
+    def test_leader_of_two_teams_gets_union(self):
+        extra = make_team(self.sales, name="Second", leader=self.sales_leader, agents=[self.sales_agent2])
+        r = resolve_role(self.sales_leader)
+        self.assertEqual(r.level, "leader")
+        self.assertEqual(r.team_member_ids, frozenset({self.sales_agent.uuid, self.sales_agent2.uuid}))
+        self.assertIsNotNone(extra)
 
     def test_agent(self):
         r = resolve_role(self.mk_agent)

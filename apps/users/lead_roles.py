@@ -20,8 +20,8 @@ class LeadRole:
 
 
 def resolve_role(user) -> LeadRole:
-    # Imported lazily: apps.commission.models imports from apps.users
-    from apps.commission.models import Team
+    # Imported lazily: apps.teams.models imports from apps.users
+    from apps.teams.models import Team
 
     department = user.department.code if user.department else DepartmentCodes.OTHER.value
 
@@ -31,7 +31,7 @@ def resolve_role(user) -> LeadRole:
     elif user.role == UserTypes.MANAGER:
         level = MANAGER
     else:
-        teams = Team.objects.filter(leader=user)
+        teams = Team.objects.filter(leader=user, is_active=True)
         if teams.exists():
             level = LEADER
             team_member_ids = frozenset(
