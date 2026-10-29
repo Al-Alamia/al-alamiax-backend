@@ -47,6 +47,10 @@ def _forbidden() -> Response:
     return error("You do not have permission to do that.", "forbidden", 403)
 
 
+def _archived() -> Response:
+    return error("This plan is archived.", "archived", 400)
+
+
 def _uuid(value) -> Optional[uuid_lib.UUID]:
     try:
         return uuid_lib.UUID(str(value))
@@ -122,7 +126,7 @@ def _month(raw) -> date:
 
 
 def _number(raw, field) -> Decimal:
-    if isinstance(raw, bool) or not isinstance(raw, (int, float, str)):
+    if isinstance(raw, bool) or not isinstance(raw, (int, float, str, Decimal)):
         raise _Invalid(f"'{field}' must be a number.")
     try:
         d = Decimal(str(raw).strip())
@@ -149,8 +153,8 @@ def _threshold(raw, metric) -> Optional[Decimal]:
     if raw in (None, ""):
         return None
     d = _number(raw, "american_threshold_percent")
-    if d > 100 or d != d.quantize(Decimal("0.01")):
-        raise _Invalid("'american_threshold_percent' must be between 0 and 100 (2 decimals).")
+    if d <= 0 or d > 100 or d != d.quantize(Decimal("0.01")):
+        raise _Invalid("'american_threshold_percent' must be above 0 and at most 100 (2 decimals).")
     if metric != PlanMetric.LEAD_COUNT:
         raise _Invalid("An American threshold is only supported for the lead_count metric.")
     return d.quantize(Decimal("0.01"))
@@ -219,8 +223,17 @@ def plans(request):
         tiers = _tiers(body.get("tiers"))
         try:
             with transaction.atomic():
-                plan = CommissionPlan.objects.create(
-                    kind=kind, metric=metric, american_threshold_percent=threshold, **target)
+                plan = CommissionPlan.objects.filter(**target).first()
+                if plan is None:
+                    plan = CommissionPlan.objects.create(
+                        kind=kind, metric=metric, american_threshold_percent=threshold, **target)
+                elif plan.is_active:
+                    return error("This target already has a commission plan.", "duplicate_plan", 400)
+                else:  # archived plan for this target: reactivate it
+                    plan.is_active, plan.metric = True, metric
+                    plan.american_threshold_percent = threshold
+                    plan.save(update_fields=["is_active", "metric", "american_threshold_percent",
+                                             "updated_at"])
                 save_version(plan, effective_from, tiers, user)
         except IntegrityError:
             return error("This target already has a commission plan.", "duplicate_plan", 400)
@@ -247,6 +260,8 @@ def plan_detail(request, uuid):
         plan.save(update_fields=["is_active", "updated_at"])
         return Response(plan_data(plan, user, today))
 
+    if not plan.is_active:
+        return _archived()
     body = _body(request)
     if body is None:
         return _invalid("Body must be an object.")
@@ -281,6 +296,8 @@ def plan_version(request, uuid, month):
         return _not_found()
     if request.method == "PUT" and not can_manage_plan(user, plan):
         return _forbidden()
+    if request.method == "PUT" and not plan.is_active:
+        return _archived()
     try:
         month_date = _month(month)
         if request.method == "GET":

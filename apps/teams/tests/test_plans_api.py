@@ -37,6 +37,7 @@ class PlansBase(BaseUserTestCase):
         self.mmgr = mk("mmgr", UserTypes.MANAGER, self.mkt)
         self.leader = mk("lead", UserTypes.AGENT, self.sales)
         self.agent = mk("salesagent", UserTypes.AGENT, self.sales)
+        self.hr = mk("hr", UserTypes.HR, self.sales)
         self.mkt_agent = mk("magent", UserTypes.AGENT, self.mkt)
         self.nodept = mk("nodept", UserTypes.AGENT, None)
         self.sales_team = make_team(self.sales, "Sales Team", leader=self.leader, agents=[self.agent])
@@ -121,6 +122,38 @@ class CreateTests(PlansBase):
             r = self.post_plan(self.smgr, **{"department": d, **extra})
             self.assertEqual(r.status_code, 400, extra)
             self.assertEqual(r.data["type"], "invalid", extra)
+
+    def test_zero_threshold_rejected(self):
+        tiers = TIERS + [tier(0, None, "flat", 50, "american")]
+        r = self.post_plan(self.smgr, department=str(self.sales.uuid), tiers=tiers,
+                           american_threshold_percent="0")
+        self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))
+
+    def test_hr_forbidden(self):
+        r = self.post_plan(self.hr, department=str(self.sales.uuid))
+        self.assertEqual(r.status_code, 403)
+
+    def test_post_reactivates_archived_plan(self):
+        plan = make_plan(PlanKind.PERSONAL, department=self.sales, metric="deal_count")
+        make_version(plan, date.today().replace(day=1), [tier(0, None, "flat", 1)])
+        plan.is_active = False
+        plan.save()
+        r = self.post_plan(self.smgr, department=str(self.sales.uuid), metric="lead_count")
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertEqual(r.data["uuid"], str(plan.uuid))
+        self.assertTrue(r.data["is_active"])
+        self.assertEqual(r.data["metric"], "lead_count")
+        self.assertEqual(len(r.data["current_version"]["tiers"]), 3)
+        self.assertEqual(CommissionPlan.objects.count(), 1)
+
+    def test_reactivation_failure_rolls_back(self):
+        plan = make_plan(PlanKind.PERSONAL, department=self.sales)
+        plan.is_active = False
+        plan.save()
+        r = self.post_plan(self.smgr, department=str(self.sales.uuid), tiers=[tier(0, 9, "flat", 1)] * 2)
+        self.assertEqual(r.data["type"], "invalid_tiers")
+        plan.refresh_from_db()
+        self.assertFalse(plan.is_active)
 
     def test_threshold_with_american_tiers(self):
         tiers = TIERS + [tier(0, None, "flat", 50, "american")]
@@ -222,6 +255,33 @@ class DetailTests(PlansBase):
         body = {"metric": "deal_count", "effective_from": month(1), "tiers": TIERS}
         self.assertEqual(self.send("patch", self.agent, self.url(self.plan), body).status_code, 403)
         self.assertEqual(self.send("patch", self.mmgr, self.url(self.plan), body).status_code, 404)
+
+    def test_patch_keeps_stored_threshold(self):
+        plan = make_plan(PlanKind.PERSONAL, user=self.leader, threshold="40.00")
+        american = TIERS + [tier(0, None, "flat", 5, "american")]
+        make_version(plan, date.today().replace(day=1), american)
+        body = {"metric": "lead_count", "effective_from": month(1), "tiers": american}
+        r = self.send("patch", self.smgr, self.url(plan), body)
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertEqual(r.data["american_threshold_percent"], "40.00")
+
+    def test_archived_plan_rejects_patch_and_put(self):
+        self.plan.is_active = False
+        self.plan.save()
+        body = {"metric": "deal_count", "effective_from": month(1), "tiers": TIERS}
+        r = self.send("patch", self.smgr, self.url(self.plan), body)
+        self.assertEqual((r.status_code, r.data["type"]), (400, "archived"))
+        r = self.send("put", self.smgr, self.url(self.plan, f"/versions/{month(1)}"), {"tiers": TIERS})
+        self.assertEqual((r.status_code, r.data["type"]), (400, "archived"))
+
+    def test_hr_read_only(self):
+        r = self.send("get", self.hr, self.url(self.plan))
+        self.assertEqual((r.status_code, r.data["can_edit"]), (200, False))
+        self.assertFalse(self.send("get", self.hr, PLANS).data[0]["can_edit"])
+        body = {"metric": "deal_count", "effective_from": month(1), "tiers": TIERS}
+        self.assertEqual(self.send("patch", self.hr, self.url(self.plan), body).status_code, 403)
+        url = self.url(self.plan, f"/versions/{month(1)}")
+        self.assertEqual(self.send("put", self.hr, url, {"tiers": TIERS}).status_code, 403)
 
     def test_delete_archives(self):
         r = self.send("delete", self.smgr, self.url(self.plan))
