@@ -91,6 +91,22 @@ class SalaryApiTests(PayrollApiBase):
         r = self.call("get", self.hr, f"{B}/salaries", {"user": str(self.agent.uuid)})
         self.assertEqual(r.data, {"current": None, "history": []})
 
+    def test_hr_cannot_see_or_edit_owner_or_superuser(self):
+        for target in (self.top, self.owner):
+            make_basic(target, date.today().replace(day=1), 100)
+            r = self.call("get", self.hr, f"{B}/salaries", {"user": str(target.uuid)})
+            self.assertEqual(r.status_code, 404)
+            r = self.call("put", self.hr, f"{B}/salaries/{target.uuid}/{this_month()}", {"amount": "9"})
+            self.assertEqual(r.status_code, 404)
+            self.assertEqual(BasicSalary.objects.get(user=target).amount, 100)
+
+    def test_owner_edits_owner(self):
+        r = self.call("put", self.top, f"{B}/salaries/{self.owner.uuid}/{this_month()}", {"amount": "1"})
+        self.assertEqual(r.status_code, 404)
+        other = mk("owner2", UserTypes.OWNER, self.dept)
+        r = self.call("put", self.top, f"{B}/salaries/{other.uuid}/{this_month()}", {"amount": "1"})
+        self.assertEqual(r.status_code, 200)
+
     def test_unknown_user_404(self):
         r = self.call("get", self.hr, f"{B}/salaries", {"user": "bad"})
         self.assertEqual(r.status_code, 404)
