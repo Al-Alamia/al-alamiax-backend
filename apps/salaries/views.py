@@ -135,7 +135,9 @@ def salary_list(request):
                 acc["total"] += total
         totals["given"] += is_given
         results.append({
-            "user": user_data(u), "status": SalaryStatus.GIVEN.value if is_given else SalaryStatus.DRAFT.value,
+            "user": user_data(u),
+            "project": {"uuid": str(u.project.uuid), "name": u.project.name} if u.project else None,
+            "status": SalaryStatus.GIVEN.value if is_given else SalaryStatus.DRAFT.value,
             "basic_net": None if net is None else money(net),
             "commission": money(comm),
             "total": None if total is None else money(total),

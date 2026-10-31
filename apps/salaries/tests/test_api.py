@@ -50,6 +50,7 @@ class SalariesApiTests(BaseUserTestCase):
         self.assertEqual(rows["beta"]["basic_net"], None)
         self.assertEqual(rows["beta"]["total"], None)
         self.assertEqual(rows["beta"]["error_types"], ["basic_not_given"])
+        self.assertIsNone(rows["alpha"]["project"])
         self.assertEqual(rows["alpha"]["basic_net"], "2900.00")
         self.assertEqual(rows["alpha"]["commission"], "10.00")
         self.assertEqual(rows["alpha"]["total"], "2910.00")
