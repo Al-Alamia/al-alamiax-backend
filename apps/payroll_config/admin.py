@@ -11,7 +11,7 @@ class BasicSalaryAdmin(admin.ModelAdmin):
 
 @admin.register(ExchangeRate)
 class ExchangeRateAdmin(admin.ModelAdmin):
-    list_display = ["month", "sar_to_egp"]
+    list_display = ["month", "currency", "rate_to_egp"]
 
 
 class DailyBonusStepInline(admin.TabularInline):

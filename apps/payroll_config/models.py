@@ -28,18 +28,27 @@ class BasicSalary(BaseModel):
         return f"{self.user_id} {self.amount} @ {self.effective_from}"
 
 
+RATE_CURRENCIES = ("SAR", "USD", "AED")
+
+
 class ExchangeRate(BaseModel):
-    month = models.DateField(unique=True)
-    sar_to_egp = models.DecimalField(
+    month = models.DateField()
+    currency = models.CharField(
+        max_length=3, choices=[(c, c) for c in RATE_CURRENCIES], default="SAR")
+    rate_to_egp = models.DecimalField(
         max_digits=10, decimal_places=4, validators=[MinValueValidator(Decimal("0.0001"))])
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
 
     class Meta:
-        ordering = ["-month"]
+        ordering = ["-month", "currency"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["month", "currency"], name="unique_rate_per_month_currency"),
+        ]
 
     def __str__(self):
-        return f"{self.month}: {self.sar_to_egp}"
+        return f"{self.month} {self.currency}: {self.rate_to_egp}"
 
 
 class DepartmentRates(BaseModel):

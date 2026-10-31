@@ -119,33 +119,48 @@ class RatesApiTests(PayrollApiBase):
         self.assertEqual(r.status_code, 200)
         res = r.data["results"]
         self.assertEqual(len(res), 12)
-        self.assertEqual(res[2], {"month": "2026-03", "sar_to_egp": "12.5000"})
-        self.assertIsNone(res[0]["sar_to_egp"])
+        self.assertEqual(res[2], {"month": "2026-03", "SAR": "12.5000", "USD": None, "AED": None})
+        self.assertEqual(res[0], {"month": "2026-01", "SAR": None, "USD": None, "AED": None})
+
+    def test_list_year_multi_currency(self):
+        make_rate(date(2026, 3, 1), "50", "USD")
+        make_rate(date(2026, 3, 1), "13.5", "AED")
+        res = self.call("get", self.hr, f"{B}/rates", {"year": 2026}).data["results"]
+        self.assertEqual(res[2], {"month": "2026-03", "SAR": None, "USD": "50.0000", "AED": "13.5000"})
 
     def test_invalid_year(self):
         r = self.call("get", self.hr, f"{B}/rates", {"year": "abc"})
         self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))
 
     def test_hr_put_past_allowed(self):
-        r = self.call("put", self.hr, f"{B}/rates/2025-03", {"sar_to_egp": "13.1234"})
+        r = self.call("put", self.hr, f"{B}/rates/2025-03/USD", {"rate_to_egp": "48.1234"})
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data["sar_to_egp"], "13.1234")
+        self.assertEqual(r.data, {"month": "2025-03", "currency": "USD", "rate_to_egp": "48.1234"})
+
+    def test_put_egp_or_unknown_invalid(self):
+        for cur in ("EGP", "XYZ"):
+            r = self.call("put", self.hr, f"{B}/rates/2025-03/{cur}", {"rate_to_egp": "1"})
+            self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))
+
+    def test_put_missing_field(self):
+        r = self.call("put", self.hr, f"{B}/rates/2025-03/USD", {})
+        self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))
 
     def test_invalid_rates(self):
         for bad in ("0", "1.12345", "x"):
-            r = self.call("put", self.hr, f"{B}/rates/2025-03", {"sar_to_egp": bad})
+            r = self.call("put", self.hr, f"{B}/rates/2025-03/SAR", {"rate_to_egp": bad})
             self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))
 
     def test_roles(self):
-        self.assertEqual(self.call("put", self.mgr, f"{B}/rates/2025-03", {"sar_to_egp": "1"}).status_code, 403)
+        self.assertEqual(self.call("put", self.mgr, f"{B}/rates/2025-03/SAR", {"rate_to_egp": "1"}).status_code, 403)
         self.assertEqual(self.call("get", self.mgr, f"{B}/rates").status_code, 200)
         self.assertEqual(self.call("get", self.agent, f"{B}/rates").status_code, 403)
-        self.assertEqual(self.call("delete", self.mgr, f"{B}/rates/2025-03").status_code, 403)
+        self.assertEqual(self.call("delete", self.mgr, f"{B}/rates/2025-03/SAR").status_code, 403)
 
     def test_delete(self):
-        self.assertEqual(self.call("delete", self.hr, f"{B}/rates/2025-03").status_code, 404)
-        make_rate(date(2025, 3, 1), 2)
-        self.assertEqual(self.call("delete", self.hr, f"{B}/rates/2025-03").status_code, 204)
+        self.assertEqual(self.call("delete", self.hr, f"{B}/rates/2025-03/USD").status_code, 404)
+        make_rate(date(2025, 3, 1), 2, "USD")
+        self.assertEqual(self.call("delete", self.hr, f"{B}/rates/2025-03/USD").status_code, 204)
 
 
 class DepartmentRatesApiTests(PayrollApiBase):

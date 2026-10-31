@@ -6,8 +6,8 @@ def make_basic(user, month, amount, note=""):
         user=user, effective_from=month, amount=amount, note=note)
 
 
-def make_rate(month, value):
-    return ExchangeRate.objects.create(month=month, sar_to_egp=value)
+def make_rate(month, value, currency="SAR"):
+    return ExchangeRate.objects.create(month=month, currency=currency, rate_to_egp=value)
 
 
 def make_rates(department, month, price=0):

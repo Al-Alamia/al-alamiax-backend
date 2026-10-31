@@ -11,7 +11,7 @@ from apps.attendance.views import error
 from apps.users.models import Department, User
 
 from . import services
-from .models import BasicSalary, DepartmentRates, ExchangeRate
+from .models import RATE_CURRENCIES, BasicSalary, DepartmentRates, ExchangeRate
 from .permissions import can_edit_rates, can_edit_salary, can_view_rates, can_view_salary
 from .serializers import month_str, rates_data, salary_entry
 from .services import ConfigError
@@ -106,19 +106,21 @@ def rates(request):
         year = int(raw)
     else:
         return _invalid("year must be a 4-digit year.")
-    found = {r.month: r.sar_to_egp for r in ExchangeRate.objects.filter(
+    found = {(r.month, r.currency): r.rate_to_egp for r in ExchangeRate.objects.filter(
         month__gte=date(year, 1, 1), month__lte=date(year, 12, 1))}
     results = []
     for m in range(1, 13):
-        value = found.get(date(year, m, 1))
-        results.append({"month": f"{year:04d}-{m:02d}",
-                        "sar_to_egp": str(value) if value is not None else None})
+        row = {"month": f"{year:04d}-{m:02d}"}
+        for cur in RATE_CURRENCIES:
+            value = found.get((date(year, m, 1), cur))
+            row[cur] = str(value) if value is not None else None
+        results.append(row)
     return Response({"results": results})
 
 
 @api_view(["PUT", "DELETE"])
 @permission_classes([IsAuthenticated])
-def rate_detail(request, month):
+def rate_detail(request, month, currency):
     if not can_edit_rates(request.user):
         return _forbidden()
     when = _month(month)
@@ -126,18 +128,19 @@ def rate_detail(request, month):
         return _invalid("Month must be formatted YYYY-MM.")
     if request.method == "DELETE":
         try:
-            services.delete_rate(when)
+            services.delete_rate(when, currency)
         except ConfigError as e:
             return _config_error(e)
         return Response(status=204)
     body = _body(request)
-    if body is None or "sar_to_egp" not in body:
-        return _invalid("sar_to_egp is required.")
+    if body is None or "rate_to_egp" not in body:
+        return _invalid("rate_to_egp is required.")
     try:
-        rate = services.set_rate(when, body["sar_to_egp"], request.user)
+        rate = services.set_rate(when, currency, body["rate_to_egp"], request.user)
     except ConfigError as e:
         return _config_error(e)
-    return Response({"month": month_str(rate.month), "sar_to_egp": str(rate.sar_to_egp)})
+    return Response({"month": month_str(rate.month), "currency": rate.currency,
+                     "rate_to_egp": str(rate.rate_to_egp)})
 
 
 @api_view(["GET"])

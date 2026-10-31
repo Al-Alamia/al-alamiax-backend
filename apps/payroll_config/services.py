@@ -1,11 +1,11 @@
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.db import transaction
 
 from apps.teams.services import month_start
 
-from .models import BasicSalary, DailyBonusStep, DepartmentRates, ExchangeRate
+from .models import RATE_CURRENCIES, BasicSalary, DailyBonusStep, DepartmentRates, ExchangeRate
 
 MAX_STEPS = 10
 
@@ -18,9 +18,10 @@ class ConfigError(Exception):
 
 
 class MissingRate(ConfigError):
-    def __init__(self, month):
+    def __init__(self, month, currency="SAR"):
         self.month = month
-        super().__init__("missing_rate", f"No exchange rate set for {month:%Y-%m}.")
+        self.currency = currency
+        super().__init__("missing_rate", f"No {currency} exchange rate for {month:%Y-%m}.")
 
 
 def _parse_decimal(value, field, *, places, upper, positive=False):
@@ -69,26 +70,44 @@ def set_basic(user, month, amount, note, by, *, today=None):
     return entry
 
 
-def rate_for(month):
+def _check_currency(currency):
+    if currency not in RATE_CURRENCIES:
+        raise ConfigError("invalid", f"currency must be one of {', '.join(RATE_CURRENCIES)}.")
+
+
+def rate_for(month, currency="SAR"):
+    if currency == "EGP":
+        return Decimal("1")
     month = month_start(month)
-    rate = ExchangeRate.objects.filter(month=month).first()
+    rate = ExchangeRate.objects.filter(month=month, currency=currency).first()
     if rate is None:
-        raise MissingRate(month)
-    return rate.sar_to_egp
+        raise MissingRate(month, currency)
+    return rate.rate_to_egp
 
 
-def set_rate(month, sar_to_egp, by):
-    sar_to_egp = _parse_decimal(
-        sar_to_egp, "sar_to_egp", places=4, upper=Decimal(1000000), positive=True)
+def set_rate(month, currency, rate_to_egp, by):
+    _check_currency(currency)
+    rate_to_egp = _parse_decimal(
+        rate_to_egp, "rate_to_egp", places=4, upper=Decimal(1000000), positive=True)
     rate, _ = ExchangeRate.objects.update_or_create(
-        month=month_start(month), defaults={"sar_to_egp": sar_to_egp, "created_by": by})
+        month=month_start(month), currency=currency,
+        defaults={"rate_to_egp": rate_to_egp, "created_by": by})
     return rate
 
 
-def delete_rate(month):
-    deleted, _ = ExchangeRate.objects.filter(month=month_start(month)).delete()
+def delete_rate(month, currency):
+    _check_currency(currency)
+    deleted, _ = ExchangeRate.objects.filter(
+        month=month_start(month), currency=currency).delete()
     if not deleted:
-        raise ConfigError("not_found", "No exchange rate for this month.")
+        raise ConfigError("not_found", "No exchange rate for this month and currency.")
+
+
+def to_sar(amount, currency, on):
+    if currency == "SAR":
+        return amount
+    return (amount * rate_for(on, currency) / rate_for(on, "SAR")).quantize(
+        Decimal("0.01"), ROUND_HALF_UP)
 
 
 def rates_for(department, month):

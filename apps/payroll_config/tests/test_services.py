@@ -41,27 +41,75 @@ class BasicTests(TestCase):
 class RateTests(TestCase):
     def test_missing_rate(self):
         with self.assertRaises(MissingRate) as cm:
-            services.rate_for(date(2026, 11, 1))
+            services.rate_for(date(2026, 3, 1), "USD")
         self.assertEqual(cm.exception.code, "missing_rate")
+        self.assertEqual(cm.exception.currency, "USD")
+        self.assertEqual(cm.exception.message, "No USD exchange rate for 2026-03.")
         self.assertIsInstance(cm.exception, ConfigError)
 
+    def test_missing_rate_defaults_to_sar(self):
+        with self.assertRaises(MissingRate) as cm:
+            services.rate_for(date(2026, 11, 1))
+        self.assertEqual(cm.exception.currency, "SAR")
+
+    def test_rate_for_currency(self):
+        make_rate(date(2026, 3, 1), "50", "USD")
+        make_rate(date(2026, 3, 1), "13", "SAR")
+        self.assertEqual(services.rate_for(date(2026, 3, 9), "USD"), Decimal("50"))
+        self.assertEqual(services.rate_for(date(2026, 3, 9)), Decimal("13"))
+
+    def test_egp_is_one_without_query(self):
+        with self.assertNumQueries(0):
+            self.assertEqual(services.rate_for(date(2026, 3, 1), "EGP"), Decimal("1"))
+
     def test_set_rate_updates_in_place(self):
-        services.set_rate(date(2026, 11, 9), "13.5", None)
-        services.set_rate(date(2026, 11, 1), "14", None)
+        services.set_rate(date(2026, 11, 9), "SAR", "13.5", None)
+        services.set_rate(date(2026, 11, 1), "SAR", "14", None)
+        services.set_rate(date(2026, 11, 1), "USD", "50", None)
         self.assertEqual(services.rate_for(date(2026, 11, 30)), Decimal("14"))
         make_rate(date(2026, 12, 1), "1")
-        self.assertEqual(services.ExchangeRate.objects.count(), 2)
+        self.assertEqual(services.ExchangeRate.objects.count(), 3)
+
+    def test_set_rate_unknown_currency(self):
+        for cur in ("EGP", "XYZ"):
+            with self.assertRaises(ConfigError) as cm:
+                services.set_rate(date(2026, 11, 1), cur, "1", None)
+            self.assertEqual(cm.exception.code, "invalid")
 
     def test_delete_missing(self):
         with self.assertRaises(ConfigError) as cm:
-            services.delete_rate(date(2026, 11, 1))
+            services.delete_rate(date(2026, 11, 1), "SAR")
         self.assertEqual(cm.exception.code, "not_found")
 
     def test_delete(self):
         make_rate(date(2026, 11, 1), "13")
-        services.delete_rate(date(2026, 11, 1))
+        make_rate(date(2026, 11, 1), "50", "USD")
+        services.delete_rate(date(2026, 11, 1), "SAR")
         with self.assertRaises(MissingRate):
             services.rate_for(date(2026, 11, 1))
+        self.assertEqual(services.rate_for(date(2026, 11, 1), "USD"), Decimal("50"))
+
+    def test_delete_unknown_currency(self):
+        with self.assertRaises(ConfigError) as cm:
+            services.delete_rate(date(2026, 11, 1), "XYZ")
+        self.assertEqual(cm.exception.code, "invalid")
+
+    def test_to_sar_usd(self):
+        make_rate(date(2026, 3, 1), "50", "USD")
+        make_rate(date(2026, 3, 1), "13", "SAR")
+        self.assertEqual(services.to_sar(Decimal("100"), "USD", date(2026, 3, 15)), Decimal("384.62"))
+
+    def test_to_sar_sar_unchanged(self):
+        self.assertEqual(services.to_sar(Decimal("100"), "SAR", date(2026, 3, 15)), Decimal("100"))
+
+    def test_to_sar_egp(self):
+        make_rate(date(2026, 3, 1), "13", "SAR")
+        self.assertEqual(services.to_sar(Decimal("130"), "EGP", date(2026, 3, 15)), Decimal("10.00"))
+
+    def test_to_sar_missing(self):
+        with self.assertRaises(MissingRate) as cm:
+            services.to_sar(Decimal("1"), "USD", date(2026, 3, 15))
+        self.assertEqual(cm.exception.currency, "USD")
 
 
 class DepartmentRatesTests(TestCase):
@@ -152,7 +200,7 @@ class ValidationTests(TestCase):
 
     def test_bad_rate(self):
         for v in ["abc", "NaN", "Infinity", "1e30", "1.12345", True, None, "0", "1000000"]:
-            self.invalid(lambda: services.set_rate(self.month, v, None))
+            self.invalid(lambda: services.set_rate(self.month, "SAR", v, None))
 
     def test_bad_min_leads(self):
         for v in [5.9, True, "5.9", None, 0]:
@@ -164,7 +212,7 @@ class ValidationTests(TestCase):
             self.invalid(lambda: services.save_rates(self.dept, self.month, 1, v, None, today=self.today))
 
     def test_valid_edges(self):
-        services.set_rate(self.month, "999999.9999", None)
+        services.set_rate(self.month, "SAR", "999999.9999", None)
         services.set_basic(self.u, self.month, "9999999999.99", "", None, today=self.today)
 
 
