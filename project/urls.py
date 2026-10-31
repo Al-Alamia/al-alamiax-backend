@@ -40,6 +40,7 @@ urlpatterns = [
     path('api/payroll/', include('apps.payroll_config.urls')),
     path('api/subscriptions/', include('apps.subscriptions.urls')),
     path('api/monthly-basic/', include('apps.monthly_basic.urls')),
+    path('api/salaries/', include('apps.salaries.urls')),
     path('api/notifications/', include('apps.notifications.urls')),
     path('api/treasury/',include('apps.treasury.urls')),
     path('api/hr-management/',include('apps.purposes.urls')),
