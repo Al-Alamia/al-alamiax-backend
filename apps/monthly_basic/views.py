@@ -10,6 +10,7 @@ from apps.attendance.models import AttendanceSettings, PeriodClose
 from apps.attendance.permissions import is_hr_plus
 from apps.attendance.services.periods import period_key_for
 from apps.attendance.views import error
+from apps.treasury.services.advances import installment_rows
 from apps.users.admin_permissions import is_top
 from apps.users.models import User
 from apps.users.types import UserTypes
@@ -17,7 +18,7 @@ from apps.users.types import UserTypes
 from . import services
 from .models import MonthlyBasic
 from .permissions import can_edit_basic, can_view_basic, list_scope
-from .serializers import breakdown_data, inputs_data, money, user_data, user_ref
+from .serializers import advance_installments_data, breakdown_data, inputs_data, money, user_data, user_ref
 from .services import BasicError
 from .types import BasicStatus
 
@@ -138,6 +139,7 @@ def _detail(viewer, target, key, start, end):
         "given_by": user_ref(record.given_by) if record and record.given_by else None,
         "given_at": record.given_at.isoformat() if record and record.given_at else None,
         "inputs": inputs_data(record), "breakdown": breakdown_data(values),
+        "advance_installments": advance_installments_data(installment_rows(target, key)),
         "can_edit": can_edit,
         "can_give": bool(can_edit and date.today() >= end),
     }

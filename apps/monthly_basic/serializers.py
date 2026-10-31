@@ -40,3 +40,8 @@ def breakdown_data(values):
     out["days_adjustment"] = tenth(values["days_adjustment"])
     out["leave_days"] = tenth(values["leave_days"])
     return out
+
+
+def advance_installments_data(rows):
+    return [{"advance": str(r["advance"]), "index": r["index"], "count": r["count"],
+             "amount": money(r["amount"])} for r in rows]

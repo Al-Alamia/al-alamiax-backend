@@ -106,6 +106,16 @@ class ApiTests(BaseUserTestCase):
         r = self.client.patch(f"{self.url}?period={self.prev}", {"kpi": "-5"}, format="json")
         self.assertEqual((r.status_code, r.data["type"]), (400, "invalid"))
 
+    def test_detail_has_advance_deduction_and_installments(self):
+        from apps.monthly_basic.tests.test_compute import make_advance
+        make_advance(self.agent, 1000, 2, start=self.prev)
+        d = self.get(self.hr, f"users/{self.agent.uuid}").data
+        self.assertEqual(d["breakdown"]["advance_deduction"], "500.00")
+        self.assertEqual(d["breakdown"]["net"], "2500.00")
+        row = d["advance_installments"][0]
+        self.assertEqual((row["index"], row["count"], row["amount"]), (1, 2, "500.00"))
+        self.assertIsInstance(row["advance"], str)
+
     def test_detail_not_included_is_read_only(self):
         r = self.get(self.hr, f"users/{self.nosal.uuid}")
         self.assertEqual(r.status_code, 200)

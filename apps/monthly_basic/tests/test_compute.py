@@ -9,6 +9,7 @@ from apps.payroll_config.models import BasicSalary
 from apps.payroll_config.tests.factories import make_basic
 from apps.penalties.tests.factories import make_penalty
 from apps.penalties.types import PenaltyKind
+from apps.treasury.models import Advance, AdvanceInstallment
 from apps.users.models import User
 from apps.users.tests.base import BaseUserTestCase
 from apps.users.types import UserTypes
@@ -108,11 +109,60 @@ class ComputeTests(BaseUserTestCase):
     def test_compute_many_matches_compute_and_bounded_queries(self):
         three = self._mk(3)
         AttendanceSettings.get()
-        with self.assertNumQueries(5):
+        with self.assertNumQueries(6):
             many3 = services.compute_many(three, KEY)
         for u in three:
             rec = MonthlyBasic.objects.filter(user=u, period=KEY).first()
             self.assertEqual(many3[u.pk], services.compute(u, KEY, rec))
         six = three + [User.objects.create_user(username=f"x{i}", password="x") for i in range(3)]
-        with self.assertNumQueries(5):
+        with self.assertNumQueries(6):
             services.compute_many(six, KEY)
+
+
+def make_advance(user, amount=1000, n=2, status="approved", start=KEY):
+    adv = Advance.objects.create(user=user, amount=D(amount), installments=n, start_period=start, status=status)
+    y, m = int(start[:4]), int(start[5:])
+    for i in range(n):
+        idx = y * 12 + m - 1 + i
+        AdvanceInstallment.objects.create(
+            advance=adv, period=f"{idx // 12:04d}-{idx % 12 + 1:02d}", amount=D(amount) / n)
+    return adv
+
+
+class AdvanceDeductionTests(BaseUserTestCase):
+    def setUp(self):
+        super().setUp()
+        make_basic(self.agent, date(2026, 10, 1), 3000)
+
+    def test_advance_deduction_reduces_net(self):
+        make_advance(self.agent)
+        r = services.compute(self.agent, KEY)
+        self.assertEqual(r["advance_deduction"], D("500.00"))
+        self.assertEqual(r["net"], D("2500.00"))
+
+    def test_compute_many_matches_compute_with_advances(self):
+        make_advance(self.agent)
+        other = User.objects.create_user(username="adv2", password="x", role=UserTypes.AGENT)
+        make_basic(other, date(2026, 9, 1), 1000)
+        many = services.compute_many([self.agent, other], KEY)
+        self.assertEqual(many[self.agent.pk], services.compute(self.agent, KEY))
+        self.assertEqual(many[other.pk]["advance_deduction"], D("0"))
+        self.assertEqual(many[other.pk], services.compute(other, KEY))
+
+    def test_snapshot_keeps_advance_deduction(self):
+        make_advance(self.agent)
+        services.give(self.superuser, self.agent, KEY, today=date(2026, 11, 5))
+        rec = MonthlyBasic.objects.get(user=self.agent, period=KEY)
+        self.assertEqual(rec.advance_deduction, D("500"))
+        self.assertEqual(services.compute(self.agent, KEY, rec)["advance_deduction"], D("500.00"))
+
+    def test_regive_after_cancel_recomputes(self):
+        adv = make_advance(self.agent)
+        services.give(self.superuser, self.agent, KEY, today=date(2026, 11, 5))
+        services.ungive(self.superuser, self.agent, KEY)
+        adv.status = "cancelled"
+        adv.save()
+        services.give(self.superuser, self.agent, KEY, today=date(2026, 11, 5))
+        rec = MonthlyBasic.objects.get(user=self.agent, period=KEY)
+        self.assertEqual(rec.advance_deduction, D("0"))
+        self.assertEqual(rec.net, D("3000"))

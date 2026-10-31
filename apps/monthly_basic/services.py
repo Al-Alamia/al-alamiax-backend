@@ -22,6 +22,8 @@ from apps.users.admin_permissions import is_top
 from apps.users.models import User
 from apps.users.types import UserTypes
 
+from apps.treasury.services.advances import installments_for
+
 from .models import MonthlyBasic
 from .permissions import can_edit_basic, can_manage_basic
 from .types import BasicStatus
@@ -33,7 +35,7 @@ _CENT = Decimal("0.01")
 _TENTH = Decimal("0.1")
 
 SNAPSHOT_FIELDS = ("basic", "daily_rate", "attendance_days", "penalty_days", "deduction_days",
-                   "deduction_amount", "penalty_money", "net", "leave_days")
+                   "deduction_amount", "penalty_money", "advance_deduction", "net", "leave_days")
 
 
 class BasicError(Exception):
@@ -81,7 +83,7 @@ def missing_salary_users(key):
     return _eligible().exclude(pk__in=_with_salary_ids(month_of(key)))
 
 
-def _assemble(basic, attendance, penalty_days, penalty_money, leave, record):
+def _assemble(basic, attendance, penalty_days, penalty_money, leave, record, advance=ZERO):
     inputs = record or MonthlyBasic()
     kpi, gift = Decimal(inputs.kpi or 0), Decimal(inputs.gift or 0)
     other, adjustment = Decimal(inputs.other_deduction or 0), Decimal(inputs.days_adjustment or 0)
@@ -95,8 +97,8 @@ def _assemble(basic, attendance, penalty_days, penalty_money, leave, record):
         "attendance_days": _q(attendance), "penalty_days": _q(penalty_days),
         "days_adjustment": _q(adjustment, _TENTH), "deduction_days": _q(deduction_days),
         "deduction_amount": amount, "penalty_money": penalty_money,
-        "other_deduction": _q(other), "kpi": _q(kpi), "gift": _q(gift),
-        "net": _q(basic - amount - penalty_money - other + kpi + gift),
+        "other_deduction": _q(other), "advance_deduction": _q(advance), "kpi": _q(kpi), "gift": _q(gift),
+        "net": _q(basic - amount - penalty_money - other - Decimal(advance) + kpi + gift),
         "leave_days": _q(leave, _TENTH),
     }
 
@@ -107,6 +109,7 @@ def _snapshot(record):
         "attendance_days": record.attendance_days, "penalty_days": record.penalty_days,
         "days_adjustment": _q(record.days_adjustment, _TENTH), "deduction_days": record.deduction_days,
         "deduction_amount": record.deduction_amount, "penalty_money": record.penalty_money,
+        "advance_deduction": record.advance_deduction,
         "other_deduction": _q(record.other_deduction), "kpi": _q(record.kpi), "gift": _q(record.gift),
         "net": record.net, "leave_days": record.leave_days,
     }
@@ -127,7 +130,8 @@ def compute(user, key, record=None):
         days=Sum("value", filter=Q(kind=PenaltyKind.DAYS)),
         money=Sum("value", filter=Q(kind=PenaltyKind.MONEY)))
     return _assemble(basic, Decimal(str(att["days"] or 0)), pen["days"] or ZERO,
-                     pen["money"] or ZERO, att["leave"], record)
+                     pen["money"] or ZERO, att["leave"], record,
+                     installments_for([user.pk], key).get(user.pk, ZERO))
 
 
 def compute_many(users, key):
@@ -150,6 +154,7 @@ def compute_many(users, key):
               .order_by().values("user_id", "kind").annotate(total=Sum("value"))):
         pen[r["user_id"]][r["kind"]] = r["total"] or ZERO
 
+    advances = installments_for(ids, key)
     records = {r.user_id: r for r in MonthlyBasic.objects.filter(user_id__in=ids, period=key)}
 
     result = {}
@@ -162,7 +167,8 @@ def compute_many(users, key):
         p = pen[uid]
         result[uid] = _assemble(
             salaries.get(uid, ZERO), Decimal(str(a["days"] or 0)) if a else ZERO,
-            p[PenaltyKind.DAYS], p[PenaltyKind.MONEY], a["leave"] if a else 0, record)
+            p[PenaltyKind.DAYS], p[PenaltyKind.MONEY], a["leave"] if a else 0, record,
+            advances.get(uid, ZERO))
     return result
 
 

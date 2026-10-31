@@ -40,6 +40,7 @@ class MonthlyBasic(BaseModel):
     daily_rate = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     penalty_money = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     deduction_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    advance_deduction = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     net = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     attendance_days = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
     penalty_days = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
