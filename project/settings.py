@@ -60,6 +60,7 @@ LOCAL_APPS = [
     'apps.teams.apps.TeamsConfig',
     'apps.payroll_config.apps.PayrollConfigConfig',
     'apps.monthly_basic.apps.MonthlyBasicConfig',
+    'apps.subscriptions.apps.SubscriptionsConfig',
     'apps.notifications.apps.NotificationsConfig',
 ]
 

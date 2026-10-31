@@ -61,6 +61,8 @@ class LeadUpdateTypes (models.TextChoices):
     HIDDEN = ("hidden", "Hidden")
     UNHIDDEN = ("unhidden", "Unhidden")
     NOTE = ("note", "Note")
+    SUBSCRIPTION = ("subscription", "Subscription")
+    PAYMENT = ("payment", "Payment")
 
 
 class DeviceStatus(models.TextChoices):
