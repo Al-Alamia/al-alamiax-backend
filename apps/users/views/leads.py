@@ -8,9 +8,8 @@ from apps.users.types import LeadUpdateTypes
 from apps.users.serializers import  LeadSerializer
 from apps.users.views import IsAuthenticated , IsOwner , IsSuperUser
 from django.db import connection 
-import datetime , numpy,calendar
-from django.db.models import Q , Case , Count
-from datetime import date
+import numpy
+from django.db.models import Q
 from utils.parsers import parse_date
 
 

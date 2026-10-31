@@ -286,10 +286,11 @@ def ungive(actor, user, key):
     from apps.salaries.models import Salary
     from apps.salaries.types import SalaryStatus
     start, end = _target(actor, user, key, None, check_included=False)
-    if Salary.objects.filter(user=user, period=key, status=SalaryStatus.GIVEN).exists():
-        raise BasicError("salary_given", "Ungive the salary first.")
     with transaction.atomic():
         record = _locked(user, key)
+        if Salary.objects.select_for_update().filter(
+                user=user, period=key, status=SalaryStatus.GIVEN).exists():
+            raise BasicError("salary_given", "Ungive the salary first.")
         _assert_open(key, start, end)
         if record is None or record.status != BasicStatus.GIVEN:
             raise BasicError("not_given", "The record is not given.")
