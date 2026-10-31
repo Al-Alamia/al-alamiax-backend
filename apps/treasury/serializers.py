@@ -57,3 +57,20 @@ def row_data(r) -> dict:
     return {"date": _iso(r.get("date")), "amount": money(r["amount"]) if hasattr(r.get("amount"), "quantize")
             else r.get("amount"), "details": r.get("details"), "category": r.get("category"),
             "group": group_ref(g) if hasattr(g, "uuid") else (g or None)}
+
+
+def advance_data(a, viewer) -> dict:
+    from .services.advances import can_decide
+    from .types import AdvanceStatus
+    return {
+        "id": str(a.pk), "user": actor_brief(a.user),
+        "requested_by": actor_brief(a.requested_by) if a.requested_by else None,
+        "amount": money(a.amount), "installments": a.installments, "start_period": a.start_period,
+        "reason": a.reason, "status": a.status,
+        "decided_by": actor_brief(a.decided_by) if a.decided_by else None,
+        "decided_at": _ts(a.decided_at), "decision_note": a.decision_note, "cancel_reason": a.cancel_reason,
+        "created_at": a.created_at.isoformat(),
+        "schedule": [{"period": i.period, "amount": money(i.amount)}
+                     for i in sorted(a.schedule.all(), key=lambda i: i.period)],
+        "can_decide": a.status in (AdvanceStatus.PENDING, AdvanceStatus.APPROVED) and can_decide(viewer, a),
+    }
