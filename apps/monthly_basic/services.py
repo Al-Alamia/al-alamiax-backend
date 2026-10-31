@@ -283,7 +283,11 @@ def give(actor, user, key, *, today=None):
 
 
 def ungive(actor, user, key):
+    from apps.salaries.models import Salary
+    from apps.salaries.types import SalaryStatus
     start, end = _target(actor, user, key, None, check_included=False)
+    if Salary.objects.filter(user=user, period=key, status=SalaryStatus.GIVEN).exists():
+        raise BasicError("salary_given", "Ungive the salary first.")
     with transaction.atomic():
         record = _locked(user, key)
         _assert_open(key, start, end)
@@ -315,6 +319,13 @@ def close_period(actor, key, *, today=None):
         missing = included.count() - given
         if missing:
             raise BasicError("not_all_given", f"{missing} user(s) have not been given their basic.")
+        from apps.salaries.models import Salary
+        from apps.salaries.types import SalaryStatus
+        unpaid = included.count() - Salary.objects.filter(
+            period=key, status=SalaryStatus.GIVEN, user__in=included).count()
+        if unpaid:
+            raise BasicError("not_all_salaries_given",
+                             f"{unpaid} user(s) have not been given their salary.")
         closed = PeriodClose.objects.create(
             period=key, start=start, end=end, closed_by=actor, closed_at=timezone.now())
         PeriodCloseLog.objects.create(period=key, action="close", actor=actor)

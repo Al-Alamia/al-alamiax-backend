@@ -106,6 +106,22 @@ class ActionTests(BaseUserTestCase):
         rec = self.upd({"days_adjustment": "-0.5", "days_adjustment_note": "bonus day"})
         self.assertEqual(rec.days_adjustment, D("-0.5"))
 
+    def give_salary(self, user):
+        from apps.salaries import services as salary_services
+        salary_services.give(self.hr, user, KEY, today=TODAY)
+
+    def test_ungive_refused_when_salary_given(self):
+        services.give(self.hr, self.agent, KEY, today=TODAY)
+        self.give_salary(self.agent)
+        self.assertErr("salary_given", services.ungive, self.hr, self.agent, KEY)
+
+    def test_close_requires_salaries(self):
+        services.give(self.hr, self.agent, KEY, today=TODAY)
+        e = self.assertErr("not_all_salaries_given", services.close_period, self.hr, KEY, today=TODAY)
+        self.assertEqual(e.message, "1 user(s) have not been given their salary.")
+        self.give_salary(self.agent)
+        services.close_period(self.hr, KEY, today=TODAY)
+
     def test_close_requires_all_given(self):
         a2 = User.objects.create_user(username="a2", password="x", role=UserTypes.AGENT, department=self.department)
         make_basic(a2, date(2026, 10, 1), 2000)
@@ -114,6 +130,8 @@ class ActionTests(BaseUserTestCase):
         self.assertIn("1", e.message)
         self.assertErr("forbidden", services.close_period, self.mgr, KEY, today=TODAY)
         services.give(self.hr, a2, KEY, today=TODAY)
+        self.give_salary(self.agent)
+        self.give_salary(a2)
         self.assertErr("period_open", services.close_period, self.hr, KEY, today=date(2026, 10, 24))
         pc = services.close_period(self.hr, KEY, today=TODAY)
         self.assertEqual((pc.start, pc.end), (date(2026, 9, 26), date(2026, 10, 25)))
@@ -123,6 +141,7 @@ class ActionTests(BaseUserTestCase):
 
     def test_closed_blocks_edits(self):
         services.give(self.hr, self.agent, KEY, today=TODAY)
+        self.give_salary(self.agent)
         services.close_period(self.hr, KEY, today=TODAY)
         self.assertErr("period_closed", self.upd, {"kpi": "1"})
         self.assertErr("period_closed", services.give, self.hr, self.agent, KEY, today=TODAY)
@@ -130,6 +149,7 @@ class ActionTests(BaseUserTestCase):
 
     def test_reopen(self):
         services.give(self.hr, self.agent, KEY, today=TODAY)
+        self.give_salary(self.agent)
         services.close_period(self.hr, KEY, today=TODAY)
         self.assertErr("forbidden", services.reopen_period, self.hr, KEY, "why")
         self.assertErr("invalid", services.reopen_period, self.owner, KEY, " ")

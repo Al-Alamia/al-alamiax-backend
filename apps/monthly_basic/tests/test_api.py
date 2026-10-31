@@ -43,8 +43,10 @@ class ApiTests(BaseUserTestCase):
         return self.client.post(BASE + path, body, format="json")
 
     def give_all(self):
+        from apps.salaries import services as salary_services
         for u in (self.agent, self.other):
             self.assertEqual(self.post(self.hr, f"users/{u.uuid}/give").status_code, 200)
+            salary_services.give(self.hr, u, self.prev)
 
     def test_list_hr(self):
         r = self.get(self.hr)
@@ -139,6 +141,10 @@ class ApiTests(BaseUserTestCase):
         self.assertEqual((r.status_code, r.data["type"]), (403, "forbidden"))
         self.assertEqual(self.post(self.superuser, "reopen", reason="").data["type"], "invalid")
         self.assertEqual(self.post(self.superuser, "reopen", reason="fix").status_code, 200)
+        r = self.post(self.hr, f"users/{self.agent.uuid}/ungive")
+        self.assertEqual((r.status_code, r.data["type"]), (400, "salary_given"))
+        from apps.salaries import services as salary_services
+        salary_services.ungive(self.hr, self.agent, self.prev)
         r = self.post(self.hr, f"users/{self.agent.uuid}/ungive")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.data["status"], "draft")
