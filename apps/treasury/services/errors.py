@@ -1,8 +1,9 @@
 class TreasuryError(Exception):
-    def __init__(self, type, message):
+    def __init__(self, type, message, errors=None):
         super().__init__(message)
         self.type = type
         self.message = message
+        self.errors = errors or []
 
     @property
     def status(self):
