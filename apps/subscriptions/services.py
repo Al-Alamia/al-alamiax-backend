@@ -179,7 +179,7 @@ def create_subscription(actor, lead, data: Mapping) -> Subscription:
         if lead.status != LeadStatuses.SUBSCRIBER:
             old = lead.status
             lead.status = LeadStatuses.SUBSCRIBER
-            lead.save()
+            lead.save(update_fields=["status", "updated_at"])
             log_update(lead, actor, LeadUpdateTypes.STATUS, from_value=old, to_value=LeadStatuses.SUBSCRIBER)
         log_update(lead, actor, LeadUpdateTypes.SUBSCRIPTION,
                    to_value=f"created: {sub.plan_name} {sub.total_amount} {sub.currency}")
