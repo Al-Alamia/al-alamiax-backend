@@ -61,6 +61,7 @@ LOCAL_APPS = [
     'apps.payroll_config.apps.PayrollConfigConfig',
     'apps.monthly_basic.apps.MonthlyBasicConfig',
     'apps.subscriptions.apps.SubscriptionsConfig',
+    'apps.salaries.apps.SalariesConfig',
     'apps.notifications.apps.NotificationsConfig',
 ]
 
