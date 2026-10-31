@@ -66,15 +66,24 @@ def _notify(users, message, by, title):
         notify(users, message, kind=NotificationKinds.PAYROLL, title=title, link="/advances", sender=by)
 
 
-def _validate_schedule(user, amount, n, start_period):
+def _validate_schedule(user, amount, n, start_period, *, approving=False):
+    from apps.monthly_basic.models import MonthlyBasic
+    from apps.monthly_basic.types import BasicStatus
     ms = _ms()
     try:
         month = ms.month_of(start_period)
     except ms.BasicError:
         raise TreasuryError("invalid", "Invalid start period.")
     if start_period < period_key_for(dt.date.today(), AttendanceSettings.get().period_start_day):
+        if approving:
+            raise TreasuryError(
+                "past_period",
+                "The start period has passed. Reject this request and ask for a new one.")
         raise TreasuryError("past_period", "The start period is in the past.")
     keys = period_keys(start_period, n)
+    for key in keys:
+        if MonthlyBasic.objects.filter(user=user, period=key, status=BasicStatus.GIVEN).exists():
+            raise TreasuryError("basic_given", f"The monthly basic for {key} is already given.")
     for key in keys:
         start, end = ms.period_bounds(key)
         closed = closed_period_for(start, end)
@@ -126,7 +135,8 @@ def approve_advance(by, advance, note="") -> Advance:
         advance = _lock(advance)
         _require_pending(advance)
         _require_decider(by, advance)
-        keys = _validate_schedule(advance.user, advance.amount, advance.installments, advance.start_period)
+        keys = _validate_schedule(advance.user, advance.amount, advance.installments, advance.start_period,
+                                  approving=True)
         AdvanceInstallment.objects.bulk_create([
             AdvanceInstallment(advance=advance, period=k, amount=a)
             for k, a in zip(keys, split(advance.amount, advance.installments))])

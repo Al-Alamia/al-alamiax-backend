@@ -157,3 +157,25 @@ class AdvanceTests(BaseUserTestCase):
         rows = advances.installment_rows(self.agent, self.cur)
         self.assertEqual(len(rows), 2)
         self.assertEqual({r["count"] for r in rows}, {3, 1})
+
+    def test_request_refuses_given_basic(self):
+        MonthlyBasic.objects.create(user=self.agent, period=next_key(self.cur, 1), status=BasicStatus.GIVEN)
+        with self.assertRaises(TreasuryError) as cm:
+            self.req(n=3)
+        self.assertEqual(cm.exception.type, "basic_given")
+        self.assertIn(next_key(self.cur, 1), cm.exception.message)
+
+    def test_approve_refuses_given_basic(self):
+        adv = self.req(n=3)
+        MonthlyBasic.objects.create(user=self.agent, period=next_key(self.cur, 2), status=BasicStatus.GIVEN)
+        self.err("basic_given", advances.approve_advance, self.hr, adv)
+        self.assertEqual(Advance.objects.get(pk=adv.pk).status, "pending")
+        self.assertFalse(TreasuryEntry.objects.exists())
+
+    def test_approve_after_rollover_past_period(self):
+        adv = self.req(n=1)
+        Advance.objects.filter(pk=adv.pk).update(start_period=next_key(self.cur, -1))
+        with self.assertRaises(TreasuryError) as cm:
+            advances.approve_advance(self.hr, adv)
+        self.assertEqual(cm.exception.type, "past_period")
+        self.assertIn("Reject", cm.exception.message)

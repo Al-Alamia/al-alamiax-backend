@@ -5,6 +5,7 @@ from apps.attendance.models import AttendanceDay, AttendanceSettings
 from apps.attendance.types import DayStatus
 from apps.monthly_basic import services
 from apps.monthly_basic.models import MonthlyBasic
+from apps.monthly_basic.types import BasicStatus
 from apps.payroll_config.models import BasicSalary
 from apps.payroll_config.tests.factories import make_basic
 from apps.penalties.tests.factories import make_penalty
@@ -13,6 +14,8 @@ from apps.treasury.models import Advance, AdvanceInstallment
 from apps.users.models import User
 from apps.users.tests.base import BaseUserTestCase
 from apps.users.types import UserTypes
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
 KEY = "2026-10"
@@ -166,3 +169,17 @@ class AdvanceDeductionTests(BaseUserTestCase):
         rec = MonthlyBasic.objects.get(user=self.agent, period=KEY)
         self.assertEqual(rec.advance_deduction, D("0"))
         self.assertEqual(rec.net, D("3000"))
+
+    def test_snapshot_handles_null_advance_deduction(self):
+        rec = MonthlyBasic.objects.create(
+            user=self.agent, period=KEY, status=BasicStatus.GIVEN, basic=D(3000), daily_rate=D(100),
+            attendance_days=D(0), penalty_days=D(0), deduction_days=D(0), deduction_amount=D(0),
+            penalty_money=D(0), advance_deduction=None, net=D(3000), leave_days=D(0))
+        self.assertEqual(services.compute(self.agent, KEY, rec)["advance_deduction"], D("0.00"))
+
+    def test_give_locks_user_advances(self):
+        make_advance(self.agent)
+        with CaptureQueriesContext(connection) as ctx:
+            services.give(self.superuser, self.agent, KEY, today=date(2026, 11, 5))
+        self.assertTrue(any('FROM "treasury_advance"' in q["sql"] and "JOIN" not in q["sql"]
+                            for q in ctx.captured_queries))

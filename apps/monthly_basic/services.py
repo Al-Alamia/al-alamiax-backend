@@ -22,7 +22,9 @@ from apps.users.admin_permissions import is_top
 from apps.users.models import User
 from apps.users.types import UserTypes
 
+from apps.treasury.models import Advance
 from apps.treasury.services.advances import installments_for
+from apps.treasury.types import AdvanceStatus
 
 from .models import MonthlyBasic
 from .permissions import can_edit_basic, can_manage_basic
@@ -109,7 +111,7 @@ def _snapshot(record):
         "attendance_days": record.attendance_days, "penalty_days": record.penalty_days,
         "days_adjustment": _q(record.days_adjustment, _TENTH), "deduction_days": record.deduction_days,
         "deduction_amount": record.deduction_amount, "penalty_money": record.penalty_money,
-        "advance_deduction": record.advance_deduction,
+        "advance_deduction": _q(record.advance_deduction or ZERO),
         "other_deduction": _q(record.other_deduction), "kpi": _q(record.kpi), "gift": _q(record.gift),
         "net": record.net, "leave_days": record.leave_days,
     }
@@ -275,6 +277,9 @@ def give(actor, user, key, *, today=None):
         _assert_open(key, start, end)
         if record.status == BasicStatus.GIVEN:
             raise BasicError("already_given", "The record is already given.")
+        # Serialize with advance approve/cancel (they lock the Advance row first).
+        list(Advance.objects.select_for_update().filter(
+            user=user, status__in=[AdvanceStatus.PENDING, AdvanceStatus.APPROVED]))
         values = compute(user, key, record)
         for f in SNAPSHOT_FIELDS:
             setattr(record, f, values[f])
