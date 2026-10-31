@@ -27,7 +27,6 @@ class TreasuryOutcome(BaseModel):
     creator = models.ForeignKey(User,verbose_name="Creator" ,  on_delete=models.SET_NULL , null=True , limit_choices_to={'role': 'OWNER'})#limit_choices_to={'role': 'OWNER'}
     amount = models.PositiveIntegerField(verbose_name="Amount")
     from_advance =  models.ForeignKey(Advance,verbose_name="Advance" ,  on_delete=models.CASCADE , null=True , blank=True)
-    from_salary =  models.ForeignKey("commission.Commission",verbose_name="Salary" ,  on_delete=models.CASCADE , null=True , blank=True)
     details = models.CharField(verbose_name="Details" , max_length=250 )
 
 

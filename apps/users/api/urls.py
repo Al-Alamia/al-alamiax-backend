@@ -9,7 +9,7 @@ from apps.users.views import (
     LeadAPI ,
      )
 from apps.users.views.lead_pipeline import LeadViewSet
-from apps.users.views.leads import upload_sheet , save_upload , user_leads
+from apps.users.views.leads import upload_sheet , save_upload 
 
 
 urlpatterns = [
@@ -56,7 +56,6 @@ urlpatterns = [
     path('lead',LeadAPI.as_view()) ,
     path('upload-sheet',upload_sheet) ,
     path('save-upload',save_upload) ,
-    path('user-leads',user_leads) ,
     
     path('add-report',add_report) ,
     path('check-report',check_report) ,

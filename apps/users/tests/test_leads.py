@@ -20,14 +20,6 @@ class LeadTests(BaseUserTestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(Lead.objects.filter(phone="01234567890").count(), 1)
 
-    def test_user_leads_summary(self):
-        self.authenticate_as(self.agent)
-        from django.utils import timezone
-        url = f"/api/users/user-leads?user_uuid={self.agent.uuid}&month={timezone.now().month}&year={timezone.now().year}"
-        response = self.client.post(url)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn("total", response.data)
-
     def test_upload_sheet_mock(self):
         self.authenticate_as(self.agent)
         self.agent.crm_username = "test_crm"

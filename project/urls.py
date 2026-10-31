@@ -41,7 +41,6 @@ urlpatterns = [
     path('api/subscriptions/', include('apps.subscriptions.urls')),
     path('api/monthly-basic/', include('apps.monthly_basic.urls')),
     path('api/notifications/', include('apps.notifications.urls')),
-    path('api/commission/',include('apps.commission.api.urls')),
     path('api/treasury/',include('apps.treasury.urls')),
     path('api/hr-management/',include('apps.purposes.urls')),
     # path('media/',include('users.api.media_urls'))

@@ -5,16 +5,12 @@ from rest_framework.status import HTTP_200_OK, HTTP_400_BAD_REQUEST
 from rest_framework.request import Request
 from apps.users.models import Lead , LeadUpdate , User 
 from apps.users.types import LeadUpdateTypes
-from apps.payroll_config.services import daily_bonus, rates_for
-from apps.teams.models import Team
 from apps.users.serializers import  LeadSerializer
 from apps.users.views import IsAuthenticated , IsOwner , IsSuperUser
 from django.db import connection 
 import datetime , numpy,calendar
 from django.db.models import Q , Case , Count
 from datetime import date
-from decimal import Decimal
-from django.db.models.functions import TruncDate
 from utils.parsers import parse_date
 
 
@@ -171,58 +167,3 @@ def save_upload(request:Request):
         for lead in stored
     ])
     return Response(LeadSerializer(leads,many=True).data, status=HTTP_200_OK)
-
-
-
-
-
-def _number(value):
-    """Decimal -> JSON number: int when whole, else float."""
-    value = Decimal(value)
-    return int(value) if value == value.to_integral_value() else float(value)
-
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def user_leads(request:Request):
-    user_uuid = request.query_params.get("user_uuid")
-    month = request.query_params.get("month")
-    year = request.query_params.get("year")
-    last_day = calendar.monthrange(int(year), int(month))[1]
-    date_range = (
-        date(int(year),int(month),1) ,
-        date( int(year) , int(month) , last_day) + datetime.timedelta(days=1)
-    )
-    leads = Lead.objects.filter(date__range = date_range ,user__uuid = user_uuid)        
-    per_day = list(
-        leads
-        .annotate(day=TruncDate('date'))
-        .values('day')
-        .annotate(lead_count=Count('uuid'))
-        .values_list('lead_count', flat=True)
-    )
-
-    teams_details = []
-    teams = Team.objects.filter(leader__uuid= user_uuid, is_active=True)
-    for team in teams:
-        teams_details.append({
-            "name" : team.name,
-            "total" : Lead.objects.filter(date__range = date_range ,user__in = team.agents.all() ).count()
-        })
-    
-    
-    user = User.objects.filter(uuid=user_uuid).select_related("department").first()
-    rates = rates_for(user.department, date_range[0]) if user and user.department else None
-    steps = list(rates.steps.order_by("min_leads")) if rates else []
-    lowest = steps[0] if steps else None
-    plus_days = [c for c in per_day if lowest and c >= lowest.min_leads]
-    plus_value = sum((daily_bonus(rates, c) for c in plus_days), Decimal("0"))
-    return Response({
-        "total": leads.count(), "plus": len(plus_days), "teams": teams_details,
-        "plus_value": _number(plus_value), "plus_price": _number(lowest.amount if lowest else 0),
-        "american_leads_price": _number(rates.american_lead_price if rates else 0),
-    })
-
-
-
-

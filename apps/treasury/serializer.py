@@ -32,7 +32,6 @@ class TreasuryOutcomeSerializer(ModelSerializer):
             "amount",
             "details",
             "from_advance",
-            "from_salary",
             "created_at",
             "updated_at",
         ]
