@@ -1,6 +1,5 @@
 from django.apps import apps
 
-from apps.treasury.models import TreasuryOutcome
 from apps.users.tests.base import BaseUserTestCase
 
 
@@ -16,4 +15,7 @@ class LegacyRemovedTests(BaseUserTestCase):
     def test_models_gone(self):
         with self.assertRaises(LookupError):
             apps.get_model("commission", "Commission")
-        self.assertNotIn("from_salary", [f.name for f in TreasuryOutcome._meta.get_fields()])
+        with self.assertRaises(LookupError):
+            apps.get_model("treasury", "TreasuryOutcome")
+        with self.assertRaises(LookupError):
+            apps.get_model("treasury", "TreasuryIncome")

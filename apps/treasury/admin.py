@@ -1,52 +1,28 @@
 from django.contrib import admin
-from .models import  TreasuryIncome , TreasuryOutcome , Advance
-from utils.admin_utils import FieldSets
-# Register your models here.
+
+from .models import Advance, AdvanceInstallment, ImportBatch, ProjectGroup, TreasuryEntry
 
 
-
-class TreasuryRecordAdminSite(admin.ModelAdmin):
-    list_display = ["creator" , "amount" , "details" ]
-    list_filter = ["creator" ]
-    readonly_fields = ['uuid',"created_at","updated_at"]
-    search_fields = ['creator__username', 'amount' , "details" ,"treasury__name" ]  
-    fieldsets = FieldSets([
-            'Treasury Record Fields' ,
-            'Other Fields'
-        ],[
-            [
-                'creator',
-                'amount',
-                'details',
-            ],[
-                "uuid" ,
-                "created_at",
-                "updated_at"
-            ]
-    ]).fieldsets
+@admin.register(ProjectGroup)
+class ProjectGroupAdmin(admin.ModelAdmin):
+    list_display = ["name", "created_by"]
 
 
-class AdvanceAdminSite(admin.ModelAdmin):
-    list_display = ["creator" , "user" , "amount" ]
-    list_filter = ["creator","user"]
-    readonly_fields = ['uuid',"created_at","updated_at"]
-    search_fields = ['creator__username', 'amount' , "user__username"]  
-    fieldsets = FieldSets([
-            'Advance Fields' ,
-            'Other Fields'
-        ],[
-            [
-                'creator',
-                'user',
-                'amount',
-            ],[
-                "uuid" ,
-                "created_at",
-                "updated_at"
-            ]
-    ]).fieldsets
+@admin.register(ImportBatch)
+class ImportBatchAdmin(admin.ModelAdmin):
+    list_display = ["uuid", "row_count", "created_by", "reversed_at"]
 
 
-admin.site.register(Advance , AdvanceAdminSite)
-admin.site.register(TreasuryIncome , TreasuryRecordAdminSite)
-admin.site.register(TreasuryOutcome , TreasuryRecordAdminSite)
+@admin.register(TreasuryEntry)
+class TreasuryEntryAdmin(admin.ModelAdmin):
+    list_display = ["date", "direction", "category", "amount", "details", "group"]
+
+
+@admin.register(Advance)
+class AdvanceAdmin(admin.ModelAdmin):
+    list_display = ["user", "amount", "installments", "start_period", "status"]
+
+
+@admin.register(AdvanceInstallment)
+class AdvanceInstallmentAdmin(admin.ModelAdmin):
+    list_display = ["advance", "period", "amount"]
