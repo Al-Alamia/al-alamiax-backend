@@ -8,6 +8,7 @@ from django.db.models import DecimalField, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
+from apps.activity.services.events import record_event
 from apps.users.models import Project
 
 from ..models import ProjectGroup, TreasuryEntry
@@ -89,13 +90,17 @@ def add_entry(by, direction, category, amount, date, details, group=None) -> Tre
     details = details.strip() if isinstance(details, str) else ""
     if not 1 <= len(details) <= 250:
         raise TreasuryError("invalid", "Details must be 1-250 characters.")
-    return TreasuryEntry.objects.create(
+    entry = TreasuryEntry.objects.create(
         direction=direction, category=category, amount=amount, date=date,
         details=details, group=group, created_by=by)
+    record_event(by, "entry.added", target=entry, label=details, data={
+        "direction": direction, "category": category, "amount": f"{amount:.2f}",
+        "date": date.isoformat(), "group": group.name if group else None})
+    return entry
 
 
 @transaction.atomic
-def reverse_entry(by, entry, reason, *, allow_advance=False) -> TreasuryEntry:
+def reverse_entry(by, entry, reason, *, allow_advance=False, emit=True) -> TreasuryEntry:
     reason = reason.strip() if isinstance(reason, str) else ""
     if not reason:
         raise TreasuryError("invalid", "A reason is required.")
@@ -114,6 +119,10 @@ def reverse_entry(by, entry, reason, *, allow_advance=False) -> TreasuryEntry:
     entry.reversed_at = timezone.now()
     entry.reversal_reason = reason
     entry.save(update_fields=["reversed_at", "reversal_reason", "updated_at"])
+    if emit:
+        record_event(by, "entry.reversed", target=entry, label=entry.details, data={
+            "direction": entry.direction, "category": entry.category,
+            "amount": f"{entry.amount:.2f}", "reason": reason})
     return reversal
 
 
@@ -146,21 +155,35 @@ def create_group(by, name, project_ids) -> ProjectGroup:
     projects = _projects(project_ids)
     group = ProjectGroup.objects.create(name=name, created_by=by)
     group.projects.set(projects)
+    record_event(by, "group.created", target=group, label=name,
+                 data={"name": name, "projects": len(projects)})
     return group
 
 
 @transaction.atomic
-def update_group(group, name=None, project_ids=None) -> ProjectGroup:
+def update_group(group, name=None, project_ids=None, *, actor=None) -> ProjectGroup:
+    changed = []
     if name is not None:
-        group.name = _clean_name(name, exclude_pk=group.pk)
+        new_name = _clean_name(name, exclude_pk=group.pk)
+        if new_name != group.name:
+            changed.append("name")
+        group.name = new_name
         group.save(update_fields=["name", "updated_at"])
     if project_ids is not None:
-        group.projects.set(_projects(project_ids))
+        projects = _projects(project_ids)
+        if {p.pk for p in projects} != {p.pk for p in group.projects.all()}:
+            changed.append("projects")
+        group.projects.set(projects)
+    if changed:
+        record_event(actor, "group.updated", target=group, label=group.name,
+                     data={"name": group.name, "changed": changed})
     return group
 
 
 @transaction.atomic
-def delete_group(group) -> None:
+def delete_group(group, *, actor=None) -> None:
     if TreasuryEntry.objects.filter(group=group).exists():
         raise TreasuryError("in_use", "This group is used by ledger entries.")
+    # Recorded before delete(): Django clears the pk on the instance afterwards.
+    record_event(actor, "group.deleted", target=group, label=group.name, data={"name": group.name})
     group.delete()

@@ -178,10 +178,10 @@ def group_detail(request, pk):
     if group is None:
         return _not_found()
     if request.method == "DELETE":
-        ledger.delete_group(group)
+        ledger.delete_group(group, actor=request.user)
         return Response(status=204)
     b = _body(request)
-    group = ledger.update_group(group, b.get("name"), b.get("project_ids"))
+    group = ledger.update_group(group, b.get("name"), b.get("project_ids"), actor=request.user)
     return Response(s.group_data(group))
 
 

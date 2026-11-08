@@ -5,6 +5,7 @@ from typing import Optional
 from django.db import transaction
 from django.utils import timezone
 
+from apps.activity.services.events import record_event
 from apps.attendance.services.locks import closed_period_for
 from apps.monthly_basic.models import MonthlyBasic
 from apps.monthly_basic.permissions import can_edit_basic, can_manage_basic, list_scope
@@ -301,6 +302,8 @@ def set_override(actor, user, period, part_key, value, reason, *, today=None):
             raise SalaryError("invalid", "A reason is required.")
         SalaryOverride.objects.update_or_create(
             salary=salary, part_key=part_key, defaults={"value": amount, "reason": reason, "by": actor})
+        record_event(actor, "salary.override_set", subject=user, target=salary, label=period,
+                     data={"period": period, "part": part_key, "value": _money(amount), "reason": reason})
     return salary
 
 
@@ -312,7 +315,10 @@ def clear_override(actor, user, period, part_key, *, today=None):
         if salary.status == SalaryStatus.GIVEN:
             raise SalaryError("already_given", "The salary is already given.")
         _assert_part(user, period, part_key)
-        salary.overrides.filter(part_key=part_key).delete()
+        deleted, _ = salary.overrides.filter(part_key=part_key).delete()
+        if deleted:
+            record_event(actor, "salary.override_cleared", subject=user, target=salary, label=period,
+                         data={"period": period, "part": part_key})
     return salary
 
 
@@ -346,6 +352,8 @@ def give(actor, user, period, *, today=None):
         notify([user], f"Your salary for {period} has been given: {salary.total:.2f}",
                kind=NotificationKinds.PAYROLL, title="Salary",
                link=f"/salaries/{user.uuid}/{period}", sender=actor)
+        record_event(actor, "salary.given", subject=user, target=salary, label=period,
+                     data={"period": period, "total": _money(salary.total)})
     return salary
 
 
@@ -361,6 +369,8 @@ def ungive(actor, user, period):
         salary.given_by = None
         salary.given_at = None
         salary.save()
+        record_event(actor, "salary.ungiven", subject=user, target=salary, label=period,
+                     data={"period": period})
     return salary
 
 
@@ -384,4 +394,7 @@ def give_all(actor, period, *, today=None):
             given += 1
         except SalaryError as e:
             skipped.append({"user": _user_ref(user), "type": e.type, "message": e.message})
+    if given:
+        record_event(actor, "salary.given_all", label=period,
+                     data={"period": period, "count": given, "skipped": len(skipped)})
     return {"given": given, "skipped": skipped}

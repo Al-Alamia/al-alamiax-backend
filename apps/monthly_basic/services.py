@@ -7,6 +7,7 @@ from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
+from apps.activity.services.events import record_event
 from apps.attendance.models import AttendanceDay, AttendanceSettings, PeriodClose, PeriodCloseLog
 from apps.attendance.permissions import is_hr_plus
 from apps.attendance.services.locks import closed_period_for
@@ -257,6 +258,7 @@ def update_inputs(actor, user, key, data, *, today=None):
         _assert_open(key, start, end)
         if record.status == BasicStatus.GIVEN:
             raise BasicError("already_given", "The record is already given.")
+        changed = [f for f, v in clean.items() if getattr(record, f) != v]
         for f, v in clean.items():
             setattr(record, f, v)
         if record.days_adjustment != 0 and not record.days_adjustment_note:
@@ -265,6 +267,9 @@ def update_inputs(actor, user, key, data, *, today=None):
             raise BasicError("invalid", "other_deduction_note is required.")
         record.updated_by = actor
         record.save()
+        if changed:
+            record_event(actor, "basic.inputs_updated", subject=user, target=record, label=key,
+                         data={"period": key, "fields": sorted(changed)})
     return record
 
 
@@ -290,6 +295,8 @@ def give(actor, user, key, *, today=None):
         notify([user], f"Your basic for {key} has been given: {record.net:.2f}",
                kind=NotificationKinds.PAYROLL, title="Basic",
                link=f"/users/{user.uuid}/basic-record?period={key}", sender=actor)
+        record_event(actor, "basic.given", subject=user, target=record, label=key,
+                     data={"period": key, "net": f"{record.net:.2f}"})
     return record
 
 
@@ -312,6 +319,8 @@ def ungive(actor, user, key):
         record.given_at = None
         record.updated_by = actor
         record.save()
+        record_event(actor, "basic.ungiven", subject=user, target=record, label=key,
+                     data={"period": key})
     return record
 
 
@@ -341,6 +350,7 @@ def close_period(actor, key, *, today=None):
         closed = PeriodClose.objects.create(
             period=key, start=start, end=end, closed_by=actor, closed_at=timezone.now())
         PeriodCloseLog.objects.create(period=key, action="close", actor=actor)
+        record_event(actor, "basic.period_closed", target=closed, label=key, data={"period": key})
     return closed
 
 
@@ -356,3 +366,4 @@ def reopen_period(actor, key, reason):
         if not deleted:
             raise BasicError("not_closed", f"Payroll period {key} is not closed.")
         PeriodCloseLog.objects.create(period=key, action="reopen", actor=actor, reason=reason)
+        record_event(actor, "basic.period_reopened", label=key, data={"period": key, "reason": reason})

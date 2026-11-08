@@ -3,6 +3,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.db import transaction
 
+from apps.activity.services.events import record_event
 from apps.teams.services import month_start
 
 from .models import RATE_CURRENCIES, BasicSalary, DailyBonusStep, DepartmentRates, ExchangeRate
@@ -64,9 +65,15 @@ def set_basic(user, month, amount, note, by, *, today=None):
     month = month_start(month)
     _check_not_past(month, today)
     amount = _money(amount, "amount")
+    note = note or ""
+    existing = BasicSalary.objects.filter(user=user, effective_from=month).first()
+    unchanged = existing is not None and existing.amount == amount and existing.note == note
     entry, _ = BasicSalary.objects.update_or_create(
         user=user, effective_from=month,
-        defaults={"amount": amount, "note": note or "", "created_by": by})
+        defaults={"amount": amount, "note": note, "created_by": by})
+    if not unchanged:
+        record_event(by, "basic_salary.set", subject=user, target=entry, label=f"{month:%Y-%m}",
+                     data={"month": f"{month:%Y-%m}", "amount": f"{amount:.2f}", "note": note})
     return entry
 
 
@@ -89,18 +96,27 @@ def set_rate(month, currency, rate_to_egp, by):
     _check_currency(currency)
     rate_to_egp = _parse_decimal(
         rate_to_egp, "rate_to_egp", places=4, upper=Decimal(1000000), positive=True)
+    month = month_start(month)
+    existing = ExchangeRate.objects.filter(month=month, currency=currency).first()
+    unchanged = existing is not None and existing.rate_to_egp == rate_to_egp
     rate, _ = ExchangeRate.objects.update_or_create(
-        month=month_start(month), currency=currency,
+        month=month, currency=currency,
         defaults={"rate_to_egp": rate_to_egp, "created_by": by})
+    if not unchanged:
+        record_event(by, "rate.set", target=rate, label=f"{currency} {month:%Y-%m}",
+                     data={"month": f"{month:%Y-%m}", "currency": currency,
+                           "rate_to_egp": str(rate_to_egp)})
     return rate
 
 
-def delete_rate(month, currency):
+def delete_rate(month, currency, *, actor=None):
     _check_currency(currency)
-    deleted, _ = ExchangeRate.objects.filter(
-        month=month_start(month), currency=currency).delete()
+    month = month_start(month)
+    deleted, _ = ExchangeRate.objects.filter(month=month, currency=currency).delete()
     if not deleted:
         raise ConfigError("not_found", "No exchange rate for this month and currency.")
+    record_event(actor, "rate.deleted", label=f"{currency} {month:%Y-%m}",
+                 data={"month": f"{month:%Y-%m}", "currency": currency})
 
 
 def to_sar(amount, currency, on):
@@ -155,6 +171,9 @@ def save_rates(department, month, american_lead_price, steps, by, *, today=None)
         rates.steps.all().delete()
         DailyBonusStep.objects.bulk_create(
             [DailyBonusStep(rates=rates, min_leads=m, amount=a) for m, a in normalized])
+        record_event(by, "rates.saved", target=rates, label=f"{department.name} {month:%Y-%m}",
+                     data={"department": department.name, "month": f"{month:%Y-%m}",
+                           "american_lead_price": f"{price:.2f}", "steps": len(normalized)})
     return rates
 
 

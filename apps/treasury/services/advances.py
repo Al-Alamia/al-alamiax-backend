@@ -5,6 +5,7 @@ from django.db import transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
 
+from apps.activity.services.events import record_event
 from apps.attendance.models import AttendanceSettings
 from apps.attendance.permissions import is_hr_plus
 from apps.attendance.services.locks import closed_period_for
@@ -33,6 +34,11 @@ def _ms():
 
 def _name(user) -> str:
     return f"{user.first_name} {user.last_name}".strip() or user.username
+
+
+def _adv_data(advance) -> dict:
+    return {"amount": f"{advance.amount:.2f}", "installments": advance.installments,
+            "start_period": advance.start_period}
 
 
 def split(amount: Decimal, n: int) -> list:
@@ -112,6 +118,8 @@ def request_advance(by, user, amount, installments, start_period, reason="") -> 
         advance = Advance.objects.create(
             user=user, requested_by=by, amount=amount, installments=installments,
             start_period=start_period, reason=reason)
+        record_event(by, "advance.requested", subject=user, target=advance, label=_name(user),
+                     data=_adv_data(advance))
     _notify(approvers_for(user), f"{_name(user)} requested an advance of {amount}.", by, "Advance request")
     return advance
 
@@ -145,6 +153,8 @@ def approve_advance(by, advance, note="") -> Advance:
             date=dt.date.today(), details=f"Advance — {_name(advance.user)}"[:250],
             advance=advance, created_by=by)
         _decide(advance, by, AdvanceStatus.APPROVED, note)
+        record_event(by, "advance.approved", subject=advance.user, target=advance,
+                     label=_name(advance.user), data={**_adv_data(advance), "note": advance.decision_note})
     _notify([advance.user], "Your advance request was approved.", by, "Advance approved")
     return advance
 
@@ -166,6 +176,8 @@ def reject_advance(by, advance, note) -> Advance:
         _require_pending(advance)
         _require_decider(by, advance)
         _decide(advance, by, AdvanceStatus.REJECTED, note)
+        record_event(by, "advance.rejected", subject=advance.user, target=advance,
+                     label=_name(advance.user), data={**_adv_data(advance), "note": advance.decision_note})
     _notify([advance.user], "Your advance request was rejected.", by, "Advance rejected")
     return advance
 
@@ -178,6 +190,8 @@ def withdraw_advance(by, advance) -> Advance:
             raise TreasuryError("forbidden", "You cannot withdraw this advance.")
         advance.status = AdvanceStatus.WITHDRAWN
         advance.save(update_fields=["status", "updated_at"])
+        record_event(by, "advance.withdrawn", subject=advance.user, target=advance,
+                     label=_name(advance.user), data=_adv_data(advance))
     return advance
 
 
@@ -199,11 +213,13 @@ def cancel_advance(by, advance, reason) -> Advance:
         payout = TreasuryEntry.objects.select_for_update().filter(
             advance=advance, reverses__isnull=True, reversed_at__isnull=True).first()
         if payout is not None:
-            reverse_entry(by, payout, reason, allow_advance=True)
+            reverse_entry(by, payout, reason, allow_advance=True, emit=False)
         advance.schedule.all().delete()
         advance.status = AdvanceStatus.CANCELLED
         advance.cancel_reason = reason
         advance.save(update_fields=["status", "cancel_reason", "updated_at"])
+        record_event(by, "advance.cancelled", subject=advance.user, target=advance,
+                     label=_name(advance.user), data={**_adv_data(advance), "reason": reason})
     _notify([advance.user], "Your approved advance was cancelled.", by, "Advance cancelled")
     return advance
 

@@ -128,7 +128,7 @@ def rate_detail(request, month, currency):
         return _invalid("Month must be formatted YYYY-MM.")
     if request.method == "DELETE":
         try:
-            services.delete_rate(when, currency)
+            services.delete_rate(when, currency, actor=request.user)
         except ConfigError as e:
             return _config_error(e)
         return Response(status=204)

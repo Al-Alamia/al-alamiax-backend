@@ -2,12 +2,14 @@ import csv
 import datetime as dt
 import io
 import os
+from decimal import Decimal
 from typing import Optional
 
 from django.db import transaction
 from django.utils import timezone
 from openpyxl import load_workbook
 
+from apps.activity.services.events import record_event
 from ..models import ImportBatch, ProjectGroup, TreasuryEntry
 from ..types import CATEGORIES_BY_DIRECTION, Category, Direction
 from .errors import TreasuryError
@@ -129,6 +131,9 @@ def import_rows(by, rows, default_group) -> ImportBatch:
                       date=c["date"], details=c["details"], group=c["group"],
                       created_by=by, import_batch=batch)
         for c in clean])
+    total = sum((c["amount"] for c in clean), Decimal(0))
+    record_event(by, "import.done", target=batch, label=f"{len(clean)} rows",
+                 data={"count": len(clean), "total": f"{total:.2f}"})
     return batch
 
 
@@ -144,9 +149,11 @@ def reverse_batch(by, batch, reason) -> ImportBatch:
     if any(e.reversed_at is not None for e in entries):
         raise TreasuryError("partially_reversed", "Some entries were already reversed individually.")
     for e in entries:
-        reverse_entry(by, e, reason)
+        reverse_entry(by, e, reason, emit=False)
     batch.reversed_at = timezone.now()
     batch.reversed_by = by
     batch.reversal_reason = reason
     batch.save(update_fields=["reversed_at", "reversed_by", "reversal_reason", "updated_at"])
+    record_event(by, "import.reversed", target=batch, label=f"{len(entries)} rows",
+                 data={"count": len(entries), "reason": reason})
     return batch
