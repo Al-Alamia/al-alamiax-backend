@@ -69,3 +69,12 @@ class ScopeTests(BaseUserTestCase):
         self.assertIsNone(scope_user_ids(self.hr))
         self.assertNotIn(self.manager.pk, scope_user_ids(self.manager))
         self.assertIn(self.agent.pk, scope_user_ids(self.manager))
+
+    def test_manager_own_payroll_event_hidden(self):
+        for subj in (self.agent, None):
+            e = record_event(self.manager, "salary.given", subject=subj)
+            self.assertNotIn(e.pk, self.ids(self.manager))
+
+    def test_hr_own_treasury_event_hidden(self):
+        e = record_event(self.hr, "entry.added")
+        self.assertNotIn(e.pk, self.ids(self.hr))

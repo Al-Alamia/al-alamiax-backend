@@ -1,5 +1,8 @@
 from datetime import datetime, timedelta
 
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+
 from apps.activity.models import ActivityEvent, PageView
 from apps.activity.services.events import record_event
 from apps.activity.services.presence import (
@@ -90,3 +93,20 @@ class PresenceTests(BaseUserTestCase):
         self.assertEqual(prune(now), (1, 1))
         self.assertEqual(list(PageView.objects.all()), [keep])
         self.assertEqual(list(ActivityEvent.objects.all()), [ActivityEvent.objects.get(pk=e_keep.pk)])
+
+    def test_presence_rows_query_count_constant(self):
+        from apps.users.models import User
+        from apps.users.types import UserTypes
+
+        def run(users):
+            with CaptureQueriesContext(connection) as c:
+                presence_rows(users, T)
+            return len(c)
+
+        two = [self.agent, self.superuser]
+        extra = [User.objects.create_user(
+            username=f"u{i}", password="x", email=f"u{i}@t.com", role=UserTypes.AGENT,
+            project=self.project, department=self.department) for i in range(3)]
+        for u in two + extra:
+            heartbeat(u, "/a", T)
+        self.assertEqual(run(two), run(two + extra))

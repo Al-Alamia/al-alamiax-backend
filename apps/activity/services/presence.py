@@ -1,4 +1,7 @@
+from collections import defaultdict
 from datetime import datetime, timedelta
+
+from django.db.models import OuterRef, Subquery
 
 from apps.activity.models import PageView
 
@@ -36,30 +39,39 @@ def _user_ref(user) -> dict:
     }
 
 
-def _row(user, now: datetime) -> dict:
-    latest = PageView.objects.filter(user=user).order_by("-last_seen_at").first()
-    today = now.date()
-    seconds = 0
-    for started, seen in PageView.objects.filter(
-            user=user, started_at__date=today).values_list("started_at", "last_seen_at"):
-        seconds += int((seen - started).total_seconds())
-    online = bool(latest and latest.last_seen_at >= now - timedelta(seconds=ONLINE_WINDOW))
-    return {
-        "user": _user_ref(user),
-        "online": online,
-        "last_seen": latest.last_seen_at.isoformat() if latest else None,
-        "current_page": latest.path if latest else None,
-        "today_seconds": seconds,
-    }
+def presence_rows(users, now: datetime) -> list:
+    users = list(users)
+    ids = [u.pk for u in users]
+    newest = (PageView.objects.filter(user=OuterRef("user"))
+              .order_by("-last_seen_at").values("last_seen_at")[:1])
+    latest = {}
+    for pv in (PageView.objects.filter(user_id__in=ids, last_seen_at=Subquery(newest))
+               .order_by("-created_at")):
+        latest.setdefault(pv.user_id, pv)
+    seconds = defaultdict(int)
+    for uid, started, seen in PageView.objects.filter(
+            user_id__in=ids, started_at__date=now.date()
+    ).values_list("user_id", "started_at", "last_seen_at"):
+        seconds[uid] += int((seen - started).total_seconds())
+    cutoff = now - timedelta(seconds=ONLINE_WINDOW)
+    rows = []
+    for u in users:
+        pv = latest.get(u.pk)
+        rows.append({
+            "user": _user_ref(u),
+            "online": bool(pv and pv.last_seen_at >= cutoff),
+            "last_seen": pv.last_seen_at.isoformat() if pv else None,
+            "current_page": pv.path if pv else None,
+            "today_seconds": seconds[u.pk],
+            "_seen": pv.last_seen_at if pv else None,
+        })
+    # last_seen desc, nulls last; then online first (stable sorts)
+    rows.sort(key=lambda r: r["_seen"] or datetime.min, reverse=True)
+    rows.sort(key=lambda r: not r["online"])
+    for r in rows:
+        del r["_seen"]
+    return rows
 
 
 def presence_for(user, now: datetime) -> dict:
-    return _row(user, now)
-
-
-def presence_rows(users, now: datetime) -> list:
-    rows = [_row(u, now) for u in users]
-    # last_seen desc, nulls last, then online first (stable sorts)
-    rows.sort(key=lambda r: r["last_seen"] or "", reverse=True)
-    rows.sort(key=lambda r: not r["online"])
-    return rows
+    return presence_rows([user], now)[0]
