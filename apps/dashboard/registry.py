@@ -2,13 +2,21 @@ import logging
 from typing import Callable, Optional
 
 from .context import DashboardContext, build_context
+from .widgets import personal
 
 logger = logging.getLogger(__name__)
 
 Builder = Callable[[DashboardContext], Optional[dict]]
 
 # Ordered: personal, then team, then organisation.
-WIDGETS: "list[tuple[str, Builder]]" = []
+WIDGETS: "list[tuple[str, Builder]]" = [
+    ("attendance_period", personal.build_attendance_period),
+    ("my_requests", personal.build_my_requests),
+    ("notifications", personal.build_notifications),
+    ("my_salary", personal.build_my_salary),
+    ("my_reports", personal.build_my_reports),
+    ("my_advances", personal.build_my_advances),
+]
 
 
 def build_all(viewer, now) -> dict:

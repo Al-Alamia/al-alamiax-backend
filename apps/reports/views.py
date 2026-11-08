@@ -14,7 +14,7 @@ from .errors import ReportError
 from .models import ReportSubmission, ReportType
 from .permissions import can_manage_reports, can_view_board
 from .serializers import definition_data, submission_data, type_data
-from .services.audience import is_required, required_users
+from .services.audience import assigned_types, is_required, required_users
 from .services.board import build_board
 from .services.definition import save_definition
 from .services.periods import recent_periods
@@ -57,17 +57,12 @@ def _active_types():
     return ReportType.objects.filter(is_active=True)
 
 
-def _assigned_types(user):
-    return [rt for rt in _active_types().prefetch_related("departments", "excluded_users")
-            if required_users(rt).filter(pk=user.pk).exists()]
-
-
 @api_view(["GET"])
 @permission_classes(AUTH)
 def access(request):
     user = request.user
     board = can_view_board(user)
-    return Response({"fill": bool(_assigned_types(user)), "view_board": board,
+    return Response({"fill": bool(assigned_types(user)), "view_board": board,
                      "manage": can_manage_reports(user), "dashboard": board})
 
 
@@ -76,7 +71,7 @@ def access(request):
 def my(request):
     user, today = request.user, _today()
     out = []
-    for rt in _assigned_types(user):
+    for rt in assigned_types(user):
         subs = {s.period_start: s for s in ReportSubmission.objects.filter(report_type=rt, user=user)}
         periods = []
         for start, end in recent_periods(rt, today, 7):

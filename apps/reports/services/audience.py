@@ -17,6 +17,14 @@ def required_users(report_type):
             .distinct())
 
 
+def assigned_types(user):
+    """Active report types whose audience includes ``user``."""
+    from ..models import ReportType
+    return [rt for rt in ReportType.objects.filter(is_active=True)
+            .prefetch_related("departments", "excluded_users")
+            if required_users(rt).filter(pk=user.pk).exists()]
+
+
 def not_working_ids(user_ids, start: date, end: date, today: date) -> set:
     """Ids whose every day in [start, min(end, today)] has a non-working AttendanceDay row.
 
