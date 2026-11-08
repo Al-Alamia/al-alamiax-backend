@@ -4,6 +4,7 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from django.db import transaction
 
+from apps.activity.services.events import record_event
 from apps.notifications.services import notify
 from apps.notifications.types import NotificationKinds
 
@@ -222,6 +223,10 @@ def team_total(team, values_by_user_id):
     return sum((Decimal(values_by_user_id.get(i, 0)) for i in set(ids)), Decimal("0"))
 
 
+def _name(user) -> str:
+    return user.get_full_name().strip() or user.username
+
+
 def save_version(plan, month, tiers, by, *, threshold, today=None):
     from .models import PlanVersion, Tier
     month = month_start(month)
@@ -242,6 +247,10 @@ def save_version(plan, month, tiers, by, *, threshold, today=None):
                    f"The commission plan of team {plan.team.name} was updated ({month:%Y-%m}).",
                    kind=NotificationKinds.TEAM, title="Team plan",
                    link=f"/teams?tab=plans&plan={plan.uuid}", sender=by)
+        record_event(by, "plan.version_saved", target=plan,
+                     label=(plan.team.name if plan.team_id else f"{plan.kind} plan"),
+                     data={"month": month, "metric": plan.metric, "kind": plan.kind,
+                           "tiers": len(normalized), "replaced": not created})
     return version
 
 
@@ -253,8 +262,13 @@ def set_members(team, add, remove, by):
     with transaction.atomic():
         existing = set(team.agents.values_list("pk", flat=True))
         new_agents = [u for u in dict.fromkeys(add) if u.pk not in existing]
+        removed = [u for u in dict.fromkeys(remove) if u.pk in existing]
         team.agents.add(*add)
         team.agents.remove(*remove)
+        if new_agents or removed:
+            record_event(by, "team.members_changed", target=team, label=team.name,
+                         data={"added": [_name(u) for u in new_agents],
+                               "removed": [_name(u) for u in removed]})
         if new_agents:
             notify(new_agents, f"You were added to team {team.name}.",
                    kind=NotificationKinds.TEAM, title="Team", link="/teams", sender=by)
@@ -263,10 +277,15 @@ def set_members(team, add, remove, by):
 
 def set_leader(team, user, by):
     with transaction.atomic():
+        old = team.leader
         team.leader = user
         team.save(update_fields=["leader", "updated_at"])
         if user is not None:
             team.agents.remove(user)
+        if (old.pk if old else None) != (user.pk if user else None):
+            record_event(by, "team.leader_changed", subject=user, target=team, label=team.name,
+                         data={"leader": _name(user) if user else None,
+                               "previous": _name(old) if old else None})
     return team
 
 
@@ -292,6 +311,8 @@ def create_team(name, department, leader, agents, include_leader_in_total, by):
             set_leader(team, leader, by)
         if agents:
             set_members(team, list(agents), [], by)
+        record_event(by, "team.created", target=team, label=team.name,
+                     data={"department": department.name})
     return team
 
 
@@ -303,10 +324,19 @@ def update_team(team, by, *, name=None, department=None, include_leader_in_total
     if (new_name != team.name or new_dept.pk != team.department_id) and team.is_active:
         _check_name(new_name, new_dept.pk, exclude=team)
     with transaction.atomic():
+        changed = []
+        if new_name != team.name:
+            changed.append("name")
+        if new_dept.pk != team.department_id:
+            changed.append("department")
+        if include_leader_in_total is not None and include_leader_in_total != team.include_leader_in_total:
+            changed.append("include_leader_in_total")
         team.name, team.department = new_name, new_dept
         if include_leader_in_total is not None:
             team.include_leader_in_total = include_leader_in_total
         team.save()
+        if changed:
+            record_event(by, "team.updated", target=team, label=team.name, data={"changed": changed})
         if set_leader_to:
             set_leader(team, leader, by)
     return team

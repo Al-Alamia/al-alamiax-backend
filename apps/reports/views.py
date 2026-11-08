@@ -273,7 +273,7 @@ def _write_type(request, rt=None):
         if users is not None:
             rt.excluded_users.set(users)
         if sections is not None:
-            save_definition(rt, sections)
+            save_definition(rt, sections, actor=request.user)
     return rt
 
 

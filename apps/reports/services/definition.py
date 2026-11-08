@@ -1,5 +1,7 @@
 from django.db import transaction
 
+from apps.activity.services.events import record_event
+
 from ..errors import ReportError
 from ..models import ReportField, ReportSection
 from ..types import FieldKind
@@ -31,7 +33,7 @@ def _bool(data, key, default):
 
 
 @transaction.atomic
-def save_definition(report_type, sections: list) -> None:
+def save_definition(report_type, sections: list, *, actor=None) -> None:
     if not isinstance(sections, list):
         raise _invalid("Sections must be a list.")
     existing_sections = {str(s.uuid): s for s in report_type.sections.all()}
@@ -104,3 +106,5 @@ def save_definition(report_type, sections: list) -> None:
                 section.save(update_fields=["is_active", "updated_at"])
         else:
             section.delete()
+    record_event(actor, "report.definition_saved", target=report_type, label=report_type.name,
+                 data={"sections": len(sections)})

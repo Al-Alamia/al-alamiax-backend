@@ -9,9 +9,11 @@ from django.db.models import Sum
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 
+from apps.activity.services.events import record_event
 from apps.attendance.services.locks import PeriodClosed, assert_open
+from apps.users.lead_permissions import active_assignment
 from apps.users.services.leads import log_update
-from apps.users.types import LeadStatuses, LeadUpdateTypes, StockMarkets
+from apps.users.types import AssignmentKinds, LeadStatuses, LeadUpdateTypes, StockMarkets
 
 from . import permissions as perms
 from .models import Payment, Subscription
@@ -161,6 +163,20 @@ def _payment_log(prefix: str, sub, amount, paid_on) -> str:
     return f"{prefix}: {amount} {sub.currency} on {paid_on}"
 
 
+def _emit(actor, verb, lead, target, label, data=None) -> None:
+    assignment = active_assignment(lead, AssignmentKinds.SALES.value)
+    record_event(actor, verb, subject=assignment.agent if assignment else None,
+                 target=target, label=label, data=data)
+
+
+def _sub_label(sub) -> str:
+    return f"{sub.lead.name} - {sub.plan_name}"
+
+
+def _payment_data(sub, amount, paid_on) -> dict:
+    return {"amount": f"{amount:.2f}", "currency": sub.currency, "paid_on": paid_on}
+
+
 # ----- subscriptions -----
 
 def create_subscription(actor, lead, data: Mapping) -> Subscription:
@@ -183,6 +199,8 @@ def create_subscription(actor, lead, data: Mapping) -> Subscription:
             log_update(lead, actor, LeadUpdateTypes.STATUS, from_value=old, to_value=LeadStatuses.SUBSCRIBER)
         log_update(lead, actor, LeadUpdateTypes.SUBSCRIPTION,
                    to_value=f"created: {sub.plan_name} {sub.total_amount} {sub.currency}")
+        _emit(actor, "subscription.created", lead, sub, _sub_label(sub),
+              {"total_amount": f"{sub.total_amount:.2f}", "currency": sub.currency})
     return sub
 
 
@@ -207,6 +225,9 @@ def update_subscription(actor, sub, data: Mapping) -> Subscription:
             setattr(locked, f, fields[f])
         locked.save()
         log_update(locked.lead, actor, LeadUpdateTypes.SUBSCRIPTION, to_value="updated")
+        if changed:
+            _emit(actor, "subscription.updated", locked.lead, locked, _sub_label(locked),
+                  {"changed": sorted(changed)})
     return locked
 
 
@@ -223,6 +244,7 @@ def cancel_subscription(actor, sub, reason) -> Subscription:
         locked.cancel_reason = reason
         locked.save()
         log_update(locked.lead, actor, LeadUpdateTypes.SUBSCRIPTION, to_value="cancelled", note=reason)
+        _emit(actor, "subscription.cancelled", locked.lead, locked, _sub_label(locked), {"reason": reason})
     return locked
 
 
@@ -234,8 +256,10 @@ def delete_subscription(actor, sub) -> None:
         if locked.payments.exists():
             raise SubscriptionError("has_payments", "Subscription has payments and cannot be deleted")
         lead, plan = locked.lead, locked.plan_name
+        label = _sub_label(locked)
         locked.delete()
         log_update(lead, actor, LeadUpdateTypes.SUBSCRIPTION, to_value=f"deleted: {plan}")
+        _emit(actor, "subscription.deleted", lead, None, label)
 
 
 # ----- payments -----
@@ -264,6 +288,8 @@ def add_payment(actor, sub, data: Mapping) -> Payment:
         payment = Payment.objects.create(subscription=locked, recorded_by=actor, **fields)
         log_update(locked.lead, actor, LeadUpdateTypes.PAYMENT,
                    to_value=_payment_log("payment", locked, payment.amount, payment.paid_on))
+        _emit(actor, "payment.added", locked.lead, payment, _sub_label(locked),
+              _payment_data(locked, payment.amount, payment.paid_on))
     return payment
 
 
@@ -290,6 +316,8 @@ def update_payment(actor, payment, data: Mapping) -> Payment:
         current.save()
         log_update(locked.lead, actor, LeadUpdateTypes.PAYMENT,
                    to_value=_payment_log("payment updated", locked, current.amount, current.paid_on))
+        _emit(actor, "payment.updated", locked.lead, current, _sub_label(locked),
+              _payment_data(locked, current.amount, current.paid_on))
     return current
 
 
@@ -304,3 +332,5 @@ def delete_payment(actor, payment) -> None:
         current.delete()
         log_update(locked.lead, actor, LeadUpdateTypes.PAYMENT,
                    to_value=_payment_log("payment deleted", locked, amount, paid_on))
+        _emit(actor, "payment.deleted", locked.lead, None, _sub_label(locked),
+              _payment_data(locked, amount, paid_on))

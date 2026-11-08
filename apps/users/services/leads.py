@@ -1,5 +1,6 @@
 from django.db import IntegrityError, transaction
 
+from apps.activity.services.events import record_event
 from apps.users.lead_roles import LEADER, resolve_role
 from apps.users.lead_permissions import active_assignment
 from apps.users.models import LeadAssignment, LeadReturn, LeadUpdate
@@ -43,6 +44,8 @@ def _assign_leads(actor, leads: list, agent, kind: str) -> list:
             lead.status = LeadStatuses.ASSIGNED.value
             lead.save(update_fields=["status"])
         log_update(lead, actor, LeadUpdateTypes.ASSIGNED.value, to_value=agent.username, note=kind)
+        record_event(actor, "lead.assigned", subject=agent, target=lead,
+                     label=lead.name or lead.phone, data={"kind": kind})
     return assignments
 
 
@@ -71,4 +74,6 @@ def return_lead(actor, lead, reason: str) -> LeadReturn:
         lead, actor, LeadUpdateTypes.RETURNED.value,
         from_value=old_status, to_value=lead.status, note=reason,
     )
+    record_event(actor, "lead.returned", subject=actor, target=lead,
+                 label=lead.name or lead.phone, data={"reason": reason})
     return record

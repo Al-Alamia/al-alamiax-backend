@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 from django.db import transaction
 from django.utils import timezone
 
+from apps.activity.services.events import record_event
 from apps.attendance.services.locks import closed_period_for
 
 from ..errors import ReportError
@@ -156,6 +157,9 @@ def save_submission(report_type, user, any_date: date, values: dict, today: date
         attr, _ = _CLEANERS[field.kind]
         rows.append(ReportValue(submission=submission, field=field, **{attr: val}))
     ReportValue.objects.bulk_create(rows)
+    record_event(user, "report.submitted", subject=user, target=submission,
+                 label=f"{report_type.name} ({start.isoformat()} - {end.isoformat()})",
+                 data={"period_start": start, "period_end": end, "late": submission.is_late})
     return submission
 
 
