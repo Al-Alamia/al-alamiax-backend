@@ -5,6 +5,7 @@ from datetime import datetime, time as dtime, timedelta
 from django.core.management.base import BaseCommand
 from django.db.models import Q
 
+from apps.activity.services.retention import prune
 from apps.attendance.models import AttendanceSettings
 from apps.attendance.services.device_sync import SyncBusy, sync_all
 from apps.attendance.services.nightly import run_nightly
@@ -26,6 +27,7 @@ class Command(BaseCommand):
         parser.add_argument("--once", action="store_true", help="Run a single iteration and exit")
 
     last_sync_attempt = None  # in-memory: at most one sync attempt per interval, success or not
+    last_prune_date = None  # in-memory: activity retention runs once per calendar day
 
     def log(self, message: str) -> None:
         self.stdout.write(f"[{_now():%Y-%m-%d %H:%M:%S}] {message}")
@@ -52,6 +54,18 @@ class Command(BaseCommand):
             self.maybe_reports(now)
         except Exception:
             self.log("report reminders failed:\n" + traceback.format_exc())
+        try:
+            self.maybe_prune(now)
+        except Exception:
+            self.log("activity prune failed:\n" + traceback.format_exc())
+
+    def maybe_prune(self, now: datetime) -> None:
+        if self.last_prune_date == now.date():
+            return
+        page_views, events = prune(now)
+        self.last_prune_date = now.date()
+        if page_views or events:
+            self.log(f"pruned {page_views} page views, {events} events")
 
     def maybe_reports(self, now: datetime) -> None:
         sent = run_reminders(now)
