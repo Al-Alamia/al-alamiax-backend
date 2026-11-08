@@ -3,25 +3,14 @@ from apps.activity.permissions import (
     can_view_activity, scope_user_ids, scope_users, visible_events,
 )
 from apps.activity.services.events import record_event
-from apps.teams.models import Team
-from apps.users.models import Department, User
+from apps.activity.tests.helpers import ScopeFixtureMixin
 from apps.users.tests.base import BaseUserTestCase
-from apps.users.types import UserTypes
 
 
-class ScopeTests(BaseUserTestCase):
+class ScopeTests(ScopeFixtureMixin, BaseUserTestCase):
     def setUp(self):
         super().setUp()
-        other = Department.objects.create(name="Other")
-        mk = lambda name, role, dept: User.objects.create_user(
-            username=name, password="x", email=f"{name}@t.com", role=role,
-            project=self.project, department=dept)
-        self.other_agent = mk("other_agent", UserTypes.AGENT, other)
-        self.manager = mk("manager", UserTypes.MANAGER, self.department)
-        self.hr = mk("hr", UserTypes.HR, other)
-        self.leader = mk("leader", UserTypes.AGENT, other)
-        team = Team.objects.create(name="T", department=self.department, leader=self.leader)
-        team.agents.add(self.agent)
+        self.make_scope_fixture()
 
     def ids(self, viewer):
         return set(visible_events(viewer).values_list("pk", flat=True))
