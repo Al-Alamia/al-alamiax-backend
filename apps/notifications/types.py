@@ -8,3 +8,4 @@ class NotificationKinds(models.TextChoices):
     DEVICE = ("device", "Device")
     TEAM = ("team", "Team")
     PAYROLL = ("payroll", "Payroll")
+    REPORT = ("report", "Report")

@@ -79,3 +79,13 @@ class SchedulerResilienceTests(TestCase):
             self.assertEqual(m.call_count, 1)
             cmd.tick(NOW + timedelta(minutes=61))
             self.assertEqual(m.call_count, 2)
+
+
+class ReportRemindersSchedulerTests(TestCase):
+    def test_reminders_called_and_failure_isolated(self):
+        with mock.patch.object(sched, "run_reminders", side_effect=RuntimeError("boom")) as m, \
+                mock.patch.object(sched, "run_nightly", return_value=0) as n:
+            out = run_once()
+        m.assert_called_once_with(NOW)
+        n.assert_called_once()
+        self.assertIn("report reminders failed", out)

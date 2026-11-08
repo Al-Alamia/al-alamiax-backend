@@ -8,6 +8,7 @@ from django.db.models import Q
 from apps.attendance.models import AttendanceSettings
 from apps.attendance.services.device_sync import SyncBusy, sync_all
 from apps.attendance.services.nightly import run_nightly
+from apps.reports.services.reminders import run_reminders
 from apps.users.models import ZKConfig
 
 NIGHTLY_AT = dtime(3, 0)
@@ -47,6 +48,15 @@ class Command(BaseCommand):
             self.maybe_nightly(now)
         except Exception:
             self.log("nightly pass failed:\n" + traceback.format_exc())
+        try:
+            self.maybe_reports(now)
+        except Exception:
+            self.log("report reminders failed:\n" + traceback.format_exc())
+
+    def maybe_reports(self, now: datetime) -> None:
+        sent = run_reminders(now)
+        if sent:
+            self.log(f"report reminders sent ({sent})")
 
     def maybe_sync(self, now: datetime) -> None:
         interval = timedelta(minutes=AttendanceSettings.get().device_sync_minutes)
