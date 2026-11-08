@@ -219,6 +219,8 @@ def _settings(body, rt):
     freq = body.get("frequency", cur("frequency", Frequency.DAILY))
     if freq not in Frequency.values:
         raise ReportError("Invalid frequency.", "invalid")
+    if rt is not None and freq != rt.frequency and rt.submissions.exists():
+        raise ReportError("Frequency cannot change once the report has submissions.", "frequency_locked")
     window = body.get("edit_window_days", cur("edit_window_days", None))
     if window is not None and (isinstance(window, bool) or not isinstance(window, int)
                                or not 0 <= window <= 32767):
@@ -270,7 +272,7 @@ def _write_type(request, rt=None):
         else:
             for k, v in settings.items():
                 setattr(rt, k, v)
-            rt.save()
+            rt.save(update_fields=[*settings, "updated_at"])
         if depts is not None:
             rt.departments.set(depts)
         if users is not None:

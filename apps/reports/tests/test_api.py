@@ -1,7 +1,7 @@
 from datetime import datetime
 from datetime import date, timedelta
 
-from apps.reports.models import ReportSubmission
+from apps.reports.models import ReportSubmission, ReportType
 from apps.reports.tests.base import ReportsTestCase
 from apps.teams.models import Team
 from apps.users.models import User
@@ -199,6 +199,22 @@ class TypeCrudTests(ReportsApiBase):
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.data["type"], "has_submissions")
 
+    def test_frequency_locked_with_submissions(self):
+        self.send("post", self.mkt_agent, f"types/{self.rt.uuid}/submit",
+                  {"date": self.today.isoformat(), "values": {str(self.field.uuid): 1}})
+        r = self.send("put", self.hr, f"types/{self.rt.uuid}", self.payload(name="Daily", frequency="weekly"))
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.data["type"], "frequency_locked")
+        r = self.send("put", self.hr, f"types/{self.rt.uuid}", self.payload(name="Daily", frequency="daily"))
+        self.assertEqual(r.status_code, 200)
+
+    def test_update_keeps_last_reminded_on(self):
+        ReportType.objects.filter(pk=self.rt.pk).update(last_reminded_on=self.today)
+        r = self.send("put", self.hr, f"types/{self.rt.uuid}", self.payload(name="Daily", frequency="daily"))
+        self.assertEqual(r.status_code, 200)
+        self.rt.refresh_from_db()
+        self.assertEqual(self.rt.last_reminded_on, self.today)
+
     def test_options_only_active(self):
         self.make_type(name="Off", is_active=False)
         r = self.get(self.manager, "types/options")
@@ -219,11 +235,22 @@ class SubmissionDetailTests(ReportsApiBase):
         r = self.get(self.mkt_agent, f"submissions/{self.sub.uuid}")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(set(r.data), {"uuid", "report_type", "user", "period", "is_late", "submitted_at",
-                                       "values", "can_edit", "reason"})
+                                       "values", "can_edit", "reason", "sections"})
         self.assertEqual(r.data["period"], {"start": self.today.isoformat(), "end": self.today.isoformat()})
         self.assertEqual(self.get(self.hr, f"submissions/{self.sub.uuid}").status_code, 200)
         Team.objects.create(name="T", department=self.marketing, leader=self.manager).agents.add(self.mkt_agent)
         self.assertEqual(self.get(self.manager, f"submissions/{self.sub.uuid}").status_code, 200)
+
+    def test_sections_include_inactive_used_fields(self):
+        from apps.reports.models import ReportField
+        ReportField.objects.filter(pk=self.field.pk).update(is_active=False)
+        extra = ReportField.objects.create(section=self.field.section, label="gone", kind="number",
+                                           is_active=False, order=9)
+        r = self.get(self.mkt_agent, f"submissions/{self.sub.uuid}")
+        fields = {f["uuid"]: f for s in r.data["sections"] for f in s["fields"]}
+        self.assertIn(str(self.field.uuid), fields)
+        self.assertFalse(fields[str(self.field.uuid)]["is_active"])
+        self.assertNotIn(str(extra.uuid), fields)
 
     def test_other_agent_404(self):
         self.assertEqual(self.get(self.agent, f"submissions/{self.sub.uuid}").status_code, 404)
