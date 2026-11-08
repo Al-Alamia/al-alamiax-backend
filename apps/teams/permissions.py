@@ -1,6 +1,6 @@
 from django.db.models import Q
 
-from apps.users.models import Department
+from apps.users.models import Department, User
 from apps.users.types import UserTypes
 
 from .models import CommissionPlan, Team
@@ -68,3 +68,18 @@ def visible_plans(user):
         q |= (Q(department_id=dept_id) | Q(user__department_id=dept_id)
               | Q(team__department_id=dept_id))
     return CommissionPlan.objects.filter(q).distinct()
+
+
+def is_leader(user) -> bool:
+    return Team.objects.filter(leader=user, is_active=True).exists()
+
+
+def supervised_users(viewer):
+    """Active users whose reports/metrics ``viewer`` may see. Always includes the viewer."""
+    active = User.objects.filter(is_active=True)
+    if can_read_all(viewer):
+        return active
+    q = Q(pk=viewer.pk) | Q(team_agents__leader=viewer, team_agents__is_active=True)
+    if dept_id := _manager_department_id(viewer):
+        q |= Q(department_id=dept_id)
+    return active.filter(q).distinct()
