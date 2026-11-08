@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
+from apps.activity.services.events import record_event
 from apps.payroll_config.services import ConfigError, _money, set_basic
 from apps.users.admin_permissions import assignable_roles, can_manage_user
 from apps.attendance.permissions import is_hr_plus
@@ -94,6 +95,10 @@ def _check_password(password, user):
         raise UserAdminError("invalid", message)
 
 
+def _label(user) -> str:
+    return user.get_full_name().strip() or user.username
+
+
 def create_user(actor, data) -> User:
     if not is_hr_plus(actor):
         raise UserAdminError("forbidden", "You are not allowed to create users.", 403)
@@ -118,6 +123,8 @@ def create_user(actor, data) -> User:
             user.save()
             if basic > 0:
                 set_basic(user, date.today(), basic, "", actor)
+            record_event(actor, "user.created", subject=user, target=user, label=_label(user)[:200],
+                         data={"role": role})
     except IntegrityError:
         raise UserAdminError("duplicate_username", "This username or fingerprint ID is already used.")
     return user
@@ -149,10 +156,13 @@ def update_user(actor, user, data) -> User:
         with transaction.atomic():
             if "username" in values or values.get("fp_id"):
                 _check_unique(values.get("username", user.username), values.get("fp_id", ""), exclude=user)
+            changed = [name for name, value in values.items() if getattr(user, name) != value]
             for name, value in values.items():
                 setattr(user, name, value)
             setattr(user, "__by", actor)
             user.save()
+            record_event(actor, "user.updated", subject=user, target=user, label=_label(user)[:200],
+                         data={"fields": changed})
     except IntegrityError:
         raise UserAdminError("duplicate_username", "This username or fingerprint ID is already used.")
     return user
@@ -175,4 +185,6 @@ def set_active(actor, user, active: bool) -> User:
         user.save()
         if not active:
             revoke_refresh_tokens(user)
+        record_event(actor, "user.activated" if active else "user.deactivated", subject=user,
+                     target=user, label=_label(user)[:200])
     return user

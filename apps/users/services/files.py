@@ -4,6 +4,7 @@ import zipfile
 
 from django.db import transaction
 
+from apps.activity.services.events import record_event
 from apps.users.admin_permissions import can_manage_files
 from apps.users.models import UserFile
 from apps.users.types import FileCategory
@@ -78,16 +79,22 @@ def save_user_file(actor, user, title, category, upload) -> UserFile:
         raise FileError("file_type", "Allowed files: PDF, JPG, PNG, WEBP or DOCX.")
     ext, content_type, _ = _TYPES[kind]
     upload.name = f"file{ext}"  # never trust the client's extension
-    return UserFile.objects.create(
-        user=user, title=title, category=category, file=upload, size=upload.size,
-        content_type=content_type, uploaded_by=actor)
+    with transaction.atomic():
+        f = UserFile.objects.create(
+            user=user, title=title, category=category, file=upload, size=upload.size,
+            content_type=content_type, uploaded_by=actor)
+        record_event(actor, "file.uploaded", subject=user, target=f, label=title[:200],
+                     data={"category": category})
+    return f
 
 
 def delete_user_file(actor, f: UserFile) -> None:
     if not can_manage_files(actor, f.user):
         raise FileError("forbidden", "You are not allowed to manage these files", 403)
     name, storage = f.file.name, f.file.storage
+    title, owner, category = f.title, f.user, f.category
     with transaction.atomic():
         f.delete()
+        record_event(actor, "file.deleted", subject=owner, label=title[:200], data={"category": category})
     if name:
         storage.delete(name)

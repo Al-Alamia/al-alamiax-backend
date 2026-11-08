@@ -1,6 +1,7 @@
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from apps.activity.services.events import record_event
 from apps.notifications.services import notify
 from apps.notifications.types import NotificationKinds
 from apps.users.admin_permissions import can_manage_devices, device_approvers
@@ -80,6 +81,10 @@ def _check_manage(actor, device):
         raise DeviceError("forbidden", "You are not allowed to manage this device", 403)
 
 
+def _emit(actor, verb, device):
+    record_event(actor, f"device.{verb}", subject=device.user, target=device, label=(device.name or "")[:200])
+
+
 def _decide(actor, device, status, verb):
     _check_manage(actor, device)
     if device.status != DeviceStatus.PENDING:
@@ -89,6 +94,7 @@ def _decide(actor, device, status, verb):
     device.decided_at = timezone.now()
     setattr(device, "__by", actor)
     device.save()
+    _emit(actor, verb, device)
     notify([device.user], f"Your device {device.name} was {verb}", kind=NotificationKinds.DEVICE,
            title="Device", link="/profile", sender=actor)
     return device
@@ -106,8 +112,10 @@ def revoke_device(actor, device):
     _check_manage(actor, device)
     setattr(device, "__by", actor)
     with transaction.atomic():
+        label_device = device.name
         device.delete()
         revoke_refresh_tokens(device.user)
+        record_event(actor, "device.revoked", subject=device.user, label=(label_device or "")[:200])
 
 
 def rename_device(actor, device, name):

@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from django.db import transaction
 from rest_framework.exceptions import PermissionDenied
 
+from apps.activity.services.events import record_event
 from apps.attendance.models import Punch, Request
 from apps.attendance.permissions import can_decide, can_file_for, is_hr_plus
 from apps.attendance.types import PunchSource, RequestKind, RequestStatus
@@ -196,6 +197,14 @@ def _decide(req, actor, status: str, note: str) -> None:
     req.decision_note = (note or "").strip()[:500]
 
 
+def _emit(actor, verb: str, req, note: str = "") -> None:
+    data = {"kind": req.kind, "start_date": req.start_date, "end_date": req.end_date}
+    if note:
+        data["note"] = note
+    label = f"{req.get_kind_display()} {req.start_date}\u2013{req.end_date}"
+    record_event(actor, verb, subject=req.user, target=req, label=label[:200], data=data)
+
+
 # ---------------------------------------------------------------- lifecycle
 
 @transaction.atomic
@@ -205,6 +214,7 @@ def submit(actor, data: dict, attachment=None) -> Request:
     user = data.get("user") or actor
     req = Request.objects.create(user=user, created_by=actor, kind=data["kind"], attachment=attachment, **v)
     notices.notify_submitted(req, actor)
+    _emit(actor, "request.submitted", req)
     return req
 
 
@@ -222,6 +232,7 @@ def edit(actor, req, data: dict, attachment=None) -> Request:
     if attachment is not None:
         req.attachment = attachment
     req.save()
+    _emit(actor, "request.edited", req)
     return req
 
 
@@ -261,6 +272,7 @@ def approve(actor, req, note: str = "", over_balance: bool = False) -> Request:
         _recalc(req)
     req.refresh_from_db()
     notices.notify_decision(req, actor, "approved")
+    _emit(actor, "request.approved", req, req.decision_note)
     return req
 
 
@@ -273,6 +285,7 @@ def reject(actor, req, note: str = "") -> Request:
     _decide(req, actor, RequestStatus.REJECTED, note)
     req.save()
     notices.notify_decision(req, actor, "rejected")
+    _emit(actor, "request.rejected", req, req.decision_note)
     return req
 
 
@@ -291,6 +304,7 @@ def cancel(actor, req) -> Request:
     if was_approved:
         _drop_punch(req)
         _recalc(req)
+    _emit(actor, "request.cancelled", req)
     return req
 
 
@@ -310,4 +324,5 @@ def revoke(actor, req, note: str) -> Request:
     _drop_punch(req)
     _recalc(req)
     notices.notify_decision(req, actor, "revoked")
+    _emit(actor, "request.revoked", req, req.decision_note)
     return req

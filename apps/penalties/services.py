@@ -5,6 +5,7 @@ from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
+from apps.activity.services.events import record_event
 from apps.attendance.models import AttendanceSettings
 from apps.attendance.services.locks import closed_period_for
 from apps.attendance.services.periods import period_range
@@ -81,6 +82,8 @@ def create_penalty(actor, data: dict) -> Penalty:
         unit = "days" if kind == PenaltyKind.DAYS else "money"
         _notify(actor, penalty,
                 f"{_name(actor)} added a penalty: {title} ({value.quantize(Decimal('0.01'))} {unit}) on {when}")
+        record_event(actor, "penalty.created", subject=target, target=penalty, label=title[:200],
+                     data={"kind": kind, "value": value, "date": when})
     return penalty
 
 
@@ -99,6 +102,9 @@ def void_penalty(actor, penalty, reason: str) -> Penalty:
         penalty.void_reason = reason
         penalty.save(update_fields=["voided_at", "voided_by", "void_reason", "updated_at"])
         _notify(actor, penalty, f"{_name(actor)} voided the penalty: {penalty.title} on {penalty.date}")
+        record_event(actor, "penalty.voided", subject=penalty.user, target=penalty,
+                     label=penalty.title[:200], data={"kind": penalty.kind, "value": penalty.value,
+                                                      "date": penalty.date, "reason": reason})
     return penalty
 
 
