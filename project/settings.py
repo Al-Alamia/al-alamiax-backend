@@ -58,6 +58,8 @@ LOCAL_APPS = [
     'apps.attendance.apps.AttendanceConfig' ,
     'apps.penalties.apps.PenaltiesConfig',
     'apps.teams.apps.TeamsConfig',
+    'apps.reports.apps.ReportsConfig',
+    'apps.dashboard.apps.DashboardConfig',
     'apps.payroll_config.apps.PayrollConfigConfig',
     'apps.monthly_basic.apps.MonthlyBasicConfig',
     'apps.subscriptions.apps.SubscriptionsConfig',
@@ -246,3 +248,8 @@ CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 
 # Trust the first X-Forwarded-For entry for punch IP checks (off: browser hits gunicorn directly)
 ATTENDANCE_TRUST_PROXY = os.environ.get('ATTENDANCE_TRUST_PROXY', '0') == '1'
+
+# Behind the nginx gateway (and maybe ngrok): trust its X-Forwarded-Proto so
+# absolute URLs (media links, admin redirects) use https when the client did.
+if os.environ.get('DJANGO_BEHIND_PROXY', '0') == '1':
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
