@@ -65,6 +65,7 @@ LOCAL_APPS = [
     'apps.subscriptions.apps.SubscriptionsConfig',
     'apps.salaries.apps.SalariesConfig',
     'apps.notifications.apps.NotificationsConfig',
+    'apps.activity.apps.ActivityConfig',
 ]
 
 INSTALLED_APPS = INSTALLED_APPS + THIRD_PARTY_APPS + LOCAL_APPS
