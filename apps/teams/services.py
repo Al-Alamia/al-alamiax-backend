@@ -283,7 +283,8 @@ def set_leader(team, user, by):
         if user is not None:
             team.agents.remove(user)
         if (old.pk if old else None) != (user.pk if user else None):
-            record_event(by, "team.leader_changed", subject=user, target=team, label=team.name,
+            record_event(by, "team.leader_changed" if user else "team.leader_removed",
+                         subject=user, target=team, label=team.name,
                          data={"leader": _name(user) if user else None,
                                "previous": _name(old) if old else None})
     return team

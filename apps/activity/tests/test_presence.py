@@ -25,6 +25,11 @@ class PresenceTests(BaseUserTestCase):
         self.assertEqual(self.count(), 1)
         self.assertEqual(PageView.objects.get().last_seen_at, T + 90 * S)
 
+    def test_two_tabs_alternating_paths_two_rows(self):
+        for i in range(6):
+            heartbeat(self.agent, "/a" if i % 2 == 0 else "/b", T + i * 10 * S)
+        self.assertEqual(self.count(), 2)
+
     def test_split_after_gap(self):
         heartbeat(self.agent, "/a", T)
         heartbeat(self.agent, "/a", T + 91 * S)

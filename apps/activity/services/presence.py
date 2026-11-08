@@ -21,9 +21,12 @@ def normalize_path(path) -> str:
 
 def heartbeat(user, path: str, now: datetime) -> PageView:
     path = normalize_path(path)
-    last = PageView.objects.filter(user=user).order_by("-last_seen_at").first()
-    if (last is not None and last.path == path
-            and now - last.last_seen_at <= timedelta(seconds=MERGE_WINDOW)):
+    last = (PageView.objects.filter(
+        user=user, path=path,
+        last_seen_at__gte=now - timedelta(seconds=MERGE_WINDOW),
+        last_seen_at__lte=now)
+        .order_by("-last_seen_at").first())
+    if last is not None:
         last.last_seen_at = now
         last.save(update_fields=["last_seen_at", "updated_at"])
         return last

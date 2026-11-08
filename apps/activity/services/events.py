@@ -1,3 +1,4 @@
+import uuid
 from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
@@ -38,7 +39,8 @@ def record_event(actor, verb, *, subject=None, target=None, label="", data=None)
         verb=verb,
         area=area,
         target_type=target._meta.model_name if target is not None else "",
-        target_uuid=target.pk if target is not None else None,
+        target_uuid=(target.pk if target is not None and isinstance(target.pk, uuid.UUID)
+                     else None),
         target_label=(label or "")[:200],
         data=_jsonable(data or {}),
     )

@@ -2,7 +2,7 @@ from typing import Optional
 
 from django.db.models import Q
 
-from apps.attendance.permissions import is_hr_plus
+from apps.attendance.permissions import is_hr_plus, scoped_users
 from apps.teams.permissions import is_top, supervised_users
 from apps.users.models import User
 
@@ -41,4 +41,10 @@ def visible_events(viewer):
         qs = qs.exclude(area=Area.TREASURY)
     if not is_hr_plus(viewer):
         qs = qs.exclude(area=Area.PAYROLL)
+        # penalties, advances and HR files are for the subject's department manager only
+        # (not team leaders); the actor always sees their own.
+        managed = scoped_users(viewer).exclude(pk=viewer.pk).values_list("pk", flat=True)
+        sensitive = (Q(verb__startswith="penalty.") | Q(verb__startswith="advance.")
+                     | Q(verb__startswith="file."))
+        qs = qs.filter(~sensitive | Q(actor=viewer) | Q(subject_id__in=list(managed)))
     return qs

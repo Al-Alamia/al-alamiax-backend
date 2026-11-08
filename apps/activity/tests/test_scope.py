@@ -67,3 +67,36 @@ class ScopeTests(ScopeFixtureMixin, BaseUserTestCase):
     def test_hr_own_treasury_event_hidden(self):
         e = record_event(self.hr, "entry.added")
         self.assertNotIn(e.pk, self.ids(self.hr))
+
+
+class SensitiveScopeTests(ScopeFixtureMixin, BaseUserTestCase):
+    VERBS = ("advance.requested", "penalty.created", "file.uploaded")
+
+    def setUp(self):
+        super().setUp()
+        self.make_scope_fixture()
+
+    def ids(self, viewer):
+        return set(visible_events(viewer).values_list("pk", flat=True))
+
+    def test_leader_does_not_see_sensitive(self):
+        for v in self.VERBS:
+            e = record_event(self.superuser, v, subject=self.agent)
+            self.assertNotIn(e.pk, self.ids(self.leader), v)
+        plain = record_event(self.superuser, "request.approved", subject=self.agent)
+        self.assertIn(plain.pk, self.ids(self.leader))
+
+    def test_manager_sees_sensitive(self):
+        for v in self.VERBS:
+            e = record_event(self.superuser, v, subject=self.agent)
+            self.assertIn(e.pk, self.ids(self.manager), v)
+
+    def test_actor_sees_own(self):
+        for v in self.VERBS:
+            e = record_event(self.leader, v, subject=self.agent)
+            self.assertIn(e.pk, self.ids(self.leader), v)
+
+    def test_hr_sees_all(self):
+        for v in self.VERBS:
+            e = record_event(self.superuser, v, subject=self.agent)
+            self.assertIn(e.pk, self.ids(self.hr), v)

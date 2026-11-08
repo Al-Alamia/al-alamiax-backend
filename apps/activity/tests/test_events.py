@@ -32,6 +32,15 @@ class RecordEventTests(BaseUserTestCase):
         self.assertEqual(e.target_type, "user")
         self.assertEqual(e.target_uuid, self.agent.pk)
 
+    def test_non_uuid_target_pk_gives_null_uuid(self):
+        class Fake:
+            pk = 5
+            class _meta:
+                model_name = "fake"
+        e = record_event(self.superuser, "request.approved", target=Fake())
+        self.assertIsNone(e.target_uuid)
+        self.assertEqual(e.target_type, "fake")
+
     def test_data_jsonable(self):
         e = record_event(self.superuser, "salary.given", data={
             "amount": Decimal("12.50"), "day": date(2026, 11, 8), "nested": {"d": Decimal("1")},
@@ -51,4 +60,4 @@ class RecordEventTests(BaseUserTestCase):
     def test_every_verb_has_valid_area(self):
         for verb, area in VERBS.items():
             self.assertIn(area, Area.values, verb)
-        self.assertEqual(len(VERBS), 59)
+        self.assertEqual(len(VERBS), 60)

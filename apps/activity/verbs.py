@@ -57,6 +57,7 @@ VERBS: dict[str, str] = {
     "team.updated": "teams",
     "team.members_changed": "teams",
     "team.leader_changed": "teams",
+    "team.leader_removed": "teams",
     "plan.version_saved": "teams",
     "report.submitted": "reports",
     "report.definition_saved": "reports",
