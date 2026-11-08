@@ -1,5 +1,10 @@
+from datetime import timedelta
 from typing import Optional
 
+from apps.activity.models import PageView
+from apps.activity.permissions import can_view_activity, scope_users, visible_events
+from apps.activity.serializers import event_json
+from apps.activity.services.presence import ONLINE_WINDOW
 from apps.attendance.models import AttendanceDay, Request
 from apps.attendance.permissions import can_decide as can_decide_request
 from apps.attendance.permissions import is_hr_plus, scoped_users
@@ -95,3 +100,15 @@ def build_team_reports(ctx) -> Optional[dict]:
             missing_total += missing
     return {"submitted": submitted_total, "missing": missing_total, "types": types[:CAP],
             "link": "REPORTS_BOARD"}
+
+
+def build_team_activity(ctx) -> Optional[dict]:
+    viewer = ctx.viewer
+    if not can_view_activity(viewer):
+        return None
+    users = scope_users(viewer)
+    cutoff = ctx.now - timedelta(seconds=ONLINE_WINDOW)
+    online = (PageView.objects.filter(user__in=users, last_seen_at__gte=cutoff)
+              .values("user").distinct().count())
+    latest = [event_json(e) for e in visible_events(viewer)[:CAP]]
+    return {"online": online, "total": users.count(), "latest": latest, "link": "ACTIVITY"}
