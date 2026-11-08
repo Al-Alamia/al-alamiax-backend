@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime
 
 from apps.notifications.services import notify
@@ -9,6 +10,8 @@ from apps.users.types import UserTypes
 from ..models import ReportSubmission, ReportType
 from .audience import not_working_ids, required_users
 from .periods import period_for
+
+logger = logging.getLogger(__name__)
 
 
 def _name(user) -> str:
@@ -34,6 +37,37 @@ def _missing(report_type, start, end, today) -> list:
     return [u for u in users if u.pk not in submitted and u.pk not in off]
 
 
+def _process(rt, now, today) -> int:
+    start, end = period_for(rt, today)
+    if end != today:  # weekly/monthly fire on the period's last day only
+        return 0
+    # Claim the day first so a failure never causes re-sends on the next tick.
+    claimed = (ReportType.objects.filter(pk=rt.pk).exclude(last_reminded_on=today)
+               .update(last_reminded_on=today))
+    if not claimed:
+        return 0
+    sent = 0
+    label = start.isoformat() if start == end else f"{start.isoformat()} to {end.isoformat()}"
+    missing = _missing(rt, start, end, today)
+    if rt.remind_agents:
+        for user in missing:
+            notify([user], f"Please submit your '{rt.name}' report for {label}",
+                   kind=NotificationKinds.REPORT, title="Report reminder", link="/reports")
+            sent += 1
+    if rt.digest_leaders:
+        by_sup: dict = {}
+        for user in missing:
+            for sid in _supervisors(user):
+                by_sup.setdefault(sid, []).append(user)
+        for sid, users in by_sup.items():
+            names = ", ".join(_name(u) for u in users)
+            notify([sid], f"Missing '{rt.name}' reports for {label}: {names}",
+                   kind=NotificationKinds.REPORT, title="Missing reports",
+                   link=f"/reports/board?type={rt.uuid}")
+            sent += 1
+    return sent
+
+
 def run_reminders(now: datetime) -> int:
     """Send due reminders/digests for every active type; returns notifications sent."""
     today = now.date()
@@ -42,27 +76,8 @@ def run_reminders(now: datetime) -> int:
     for rt in types:
         if not (rt.remind_agents or rt.digest_leaders) or now.time() < rt.remind_at:
             continue
-        start, end = period_for(rt, today)
-        if end != today:  # weekly/monthly fire on the period's last day only
-            continue
-        label = start.isoformat() if start == end else f"{start.isoformat()} to {end.isoformat()}"
-        missing = _missing(rt, start, end, today)
-        if rt.remind_agents:
-            for user in missing:
-                notify([user], f"Please submit your '{rt.name}' report for {label}",
-                       kind=NotificationKinds.REPORT, title="Report reminder", link="/reports")
-                sent += 1
-        if rt.digest_leaders:
-            by_sup: dict = {}
-            for user in missing:
-                for sid in _supervisors(user):
-                    by_sup.setdefault(sid, []).append(user)
-            for sid, users in by_sup.items():
-                names = ", ".join(_name(u) for u in users)
-                notify([sid], f"Missing '{rt.name}' reports for {label}: {names}",
-                       kind=NotificationKinds.REPORT, title="Missing reports",
-                       link=f"/reports/board?type={rt.uuid}")
-                sent += 1
-        rt.last_reminded_on = today
-        rt.save(update_fields=["last_reminded_on"])
+        try:
+            sent += _process(rt, now, today)
+        except Exception:
+            logger.exception("report reminders failed for type %s", rt.pk)
     return sent

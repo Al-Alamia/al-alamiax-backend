@@ -95,3 +95,35 @@ class ReminderTests(ReportsTestCase):
         self.assertEqual(reminders.run_reminders(NOW), 0)
         self.rt.refresh_from_db()
         self.assertIsNone(self.rt.last_reminded_on)
+
+
+class ReminderIsolationTests(ReportsTestCase):
+    def setUp(self):
+        super().setUp()
+        User.objects.create_user(username="mk1", password="x", role=UserTypes.AGENT,
+                                 department=self.marketing)
+        self.bad = self.make_type("daily", name="Bad", remind_agents=True, order=0)
+        self.good = self.make_type("daily", name="Good", remind_agents=True, order=1)
+
+    def flaky(self):
+        real = reminders.notify
+
+        def fake(users, message, **kw):
+            if "'Bad'" in message:
+                raise ValueError("boom")
+            return real(users, message, **kw)
+        return mock.patch.object(reminders, "notify", side_effect=fake)
+
+    def test_failure_does_not_stop_other_types(self):
+        with self.flaky(), self.assertLogs(reminders.logger, "ERROR"):
+            self.assertEqual(reminders.run_reminders(NOW), 1)
+        self.assertEqual(Notification.objects.filter(message__contains="'Good'").count(), 1)
+
+    def test_failed_type_not_resent_same_day(self):
+        with self.flaky(), self.assertLogs(reminders.logger, "ERROR"):
+            reminders.run_reminders(NOW)
+        with self.flaky() as m:
+            self.assertEqual(reminders.run_reminders(NOW), 0)
+        m.assert_not_called()
+        self.bad.refresh_from_db()
+        self.assertEqual(self.bad.last_reminded_on, TODAY)
