@@ -8,6 +8,7 @@ from apps.users.views import (
     LeadAPI ,
      )
 from apps.users.views.lead_pipeline import LeadViewSet
+from apps.users.views.marketing_dashboard import marketing_dashboard
 from apps.users.views.leads import upload_sheet , save_upload 
 
 
@@ -42,6 +43,7 @@ urlpatterns = [
     path('leads', LeadViewSet.as_view({'get': 'list', 'post': 'create'})),
     path('leads/me', LeadViewSet.as_view({'get': 'me'})),
     path('leads/stats', LeadViewSet.as_view({'get': 'stats'})),
+    path('leads/marketing-dashboard', marketing_dashboard),
     path('leads/assign', LeadViewSet.as_view({'post': 'assign'})),
     path('leads/assignable-agents', LeadViewSet.as_view({'get': 'assignable_agents'})),
     path('leads/delete-by-phones', LeadViewSet.as_view({'post': 'delete_by_phones'})),
