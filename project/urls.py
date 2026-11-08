@@ -16,6 +16,7 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path , include , re_path
 from django.views.static import serve
+from apps.dashboard import views as dashboard_views
 from django.core.exceptions import ImproperlyConfigured
 from urllib.parse import urlsplit
 from django.conf import settings
@@ -38,6 +39,8 @@ urlpatterns = [
     path('api/penalties/', include('apps.penalties.urls')),
     path('api/teams/', include('apps.teams.urls')),
     path('api/reports/', include('apps.reports.urls')),
+    path('api/dashboard/', include('apps.dashboard.urls')),
+    path('api/dashboard', dashboard_views.dashboard),
     path('api/payroll/', include('apps.payroll_config.urls')),
     path('api/subscriptions/', include('apps.subscriptions.urls')),
     path('api/monthly-basic/', include('apps.monthly_basic.urls')),
