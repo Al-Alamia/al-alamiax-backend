@@ -1,10 +1,10 @@
+from django.core.validators import RegexValidator
 from rest_framework.serializers import SerializerMethodField , DateField
 from api_views.serializers import ModelSerializer ,  ForeignField , ManyToManyField  
 import json
 from datetime import datetime
 from ..models import (
     Department,
-    ReportRecord , 
     User , 
     Project , 
     Profile,
@@ -43,7 +43,11 @@ class ProjectSerializer(ModelSerializer):
             "uuid",
             "name",
             "logo" ,
+            "color",
         ]
+        extra_kwargs = {
+            "color": {"validators": [RegexValidator(r"^#[0-9a-fA-F]{6}$", "Enter a #RRGGBB colour.")]},
+        }
 
 class ProfileSerializer(ModelSerializer):
     picture = SerializerMethodField()
@@ -175,22 +179,6 @@ class UpdateHistorySerializer(ModelSerializer):
             "previous",
             "model_name",
             "model_uuid",
-        ]
-
-
-class ReportRecordSerializer(ModelSerializer):
-    data = SerializerMethodField()
-    user = UserSerializer(read_only=True)
-    def get_data(self,obj:ReportRecord)-> dict :
-        return obj.as_json()
-
-    class Meta:
-        model = ReportRecord
-        fields = [
-            "user",
-            "data",
-            "updated_at",
-            "created_at",
         ]
 
 

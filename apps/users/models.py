@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 class Project(BaseModel):
     name = models.CharField(verbose_name="Project Name", max_length=100)
     logo = models.ImageField(verbose_name="Logo", upload_to='projects-logo/')
+    color = models.CharField(verbose_name="Colour", max_length=7, default="#64748b")
     def __str__(self):
         return self.name
 
@@ -205,22 +206,6 @@ class ZKConfig(BaseModel):
     last_uid = models.PositiveBigIntegerField(verbose_name="Last Machine UID")
     name = models.CharField(verbose_name="Name", max_length=100, blank=True)
     last_synced_at = models.DateTimeField(verbose_name="Last Synced At", null=True, blank=True)
-    
-    
-    
-class ReportRecord(BaseModel):
-    user = models.ForeignKey(User,verbose_name="User",on_delete=models.CASCADE)
-    date = models.DateField(verbose_name="Date of Record", null=True )
-    json_data = models.TextField(verbose_name="Data as Serialized Json",max_length=2000)
-    
-    def set_data(self,data:dict):
-        self.json_data = json.dumps(data)
-        
-    def as_json(self) -> dict:
-        return json.loads(self.json_data)
-        
-    class Meta:
-        unique_together = ['user','date']
     
     
 def profile_creator_signal(sender:User, instance:User, created:bool, **kwargs):

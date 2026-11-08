@@ -1,5 +1,4 @@
 from django.urls import path , include
-from apps.users.views.report_views import add_report , check_report , get_reports
 from apps.users.views.authenticate import login , logout , token_refresh , permissions
 from apps.users.views import admin_users, devices, files, history, profile
 from apps.users.views.passwords import change_password , set_password
@@ -56,8 +55,4 @@ urlpatterns = [
     path('lead',LeadAPI.as_view()) ,
     path('upload-sheet',upload_sheet) ,
     path('save-upload',save_upload) ,
-    
-    path('add-report',add_report) ,
-    path('check-report',check_report) ,
-    path('get-reports',get_reports) ,
 ]

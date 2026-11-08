@@ -52,3 +52,14 @@ class ProjectTests(BaseUserTestCase):
         response = self.client.delete(url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(Project.objects.filter(name="To Delete").count(), 0)
+
+    def test_project_color_default_and_update(self):
+        self.assertEqual(self.project.color, "#64748b")
+        self.authenticate_as(self.superuser)
+        url = f"/api/users/project/{self.project.uuid}"
+        response = self.client.patch(url, {"color": "#ff0000"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.project.refresh_from_db()
+        self.assertEqual(self.project.color, "#ff0000")
+        response = self.client.patch(url, {"color": "red"})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
