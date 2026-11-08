@@ -161,8 +161,9 @@ def update_user(actor, user, data) -> User:
                 setattr(user, name, value)
             setattr(user, "__by", actor)
             user.save()
-            record_event(actor, "user.updated", subject=user, target=user, label=_label(user)[:200],
-                         data={"fields": changed})
+            if changed:
+                record_event(actor, "user.updated", subject=user, target=user, label=_label(user)[:200],
+                             data={"fields": changed})
     except IntegrityError:
         raise UserAdminError("duplicate_username", "This username or fingerprint ID is already used.")
     return user
@@ -179,12 +180,14 @@ def set_active(actor, user, active: bool) -> User:
         raise UserAdminError("forbidden", "You are not allowed to change this user.", 403)
     if actor.pk == user.pk:
         raise UserAdminError("self_change", "You cannot change your own active state.")
+    was_active = user.is_active
     with transaction.atomic():
         user.is_active = active
         setattr(user, "__by", actor)
         user.save()
         if not active:
             revoke_refresh_tokens(user)
-        record_event(actor, "user.activated" if active else "user.deactivated", subject=user,
-                     target=user, label=_label(user)[:200])
+        if was_active != active:
+            record_event(actor, "user.activated" if active else "user.deactivated", subject=user,
+                         target=user, label=_label(user)[:200])
     return user
