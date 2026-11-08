@@ -2,7 +2,7 @@ import logging
 from typing import Callable, Optional
 
 from .context import DashboardContext, build_context
-from .widgets import personal, team
+from .widgets import org, personal, team
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,9 @@ WIDGETS: "list[tuple[str, Builder]]" = [
     ("team_today", team.build_team_today),
     ("approvals", team.build_approvals),
     ("team_reports", team.build_team_reports),
+    ("payroll_period", org.build_payroll_period),
+    ("leads", org.build_leads),
+    ("treasury", org.build_treasury),
 ]
 
 
