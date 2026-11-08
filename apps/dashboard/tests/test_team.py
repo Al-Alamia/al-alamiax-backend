@@ -91,6 +91,14 @@ class TeamWidgetsTests(ReportsTestCase):
         self.assertEqual(a["link"], "ATTENDANCE_APPROVALS")
         self.assertEqual(a["advances_link"], "ADVANCES")
 
+    def test_inactive_user_advance_not_counted(self):
+        gone = self.mk("gone", department=self.department)
+        Advance.objects.create(user=gone, amount=Decimal("10"), installments=1,
+                               start_period="2026-11", status=AdvanceStatus.PENDING)
+        gone.is_active = False
+        gone.save()
+        self.assertEqual(widgets(self.manager)["approvals"]["advances"], 0)
+
     def test_hr_own_request_not_counted(self):
         make_request(self.hr, RequestKind.GENERAL, TODAY, status=RequestStatus.PENDING)
         make_request(self.agent, RequestKind.GENERAL, TODAY, status=RequestStatus.PENDING)

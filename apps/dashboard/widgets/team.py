@@ -4,6 +4,7 @@ from apps.attendance.models import AttendanceDay, Request
 from apps.attendance.permissions import can_decide as can_decide_request
 from apps.attendance.permissions import is_hr_plus, scoped_users
 from apps.attendance.types import DayStatus, RequestStatus
+from apps.monthly_basic.permissions import list_scope
 from apps.reports.models import ReportSubmission, ReportType
 from apps.reports.permissions import can_view_board
 from apps.reports.services.audience import not_working_ids, required_users
@@ -61,9 +62,10 @@ def build_approvals(ctx) -> Optional[dict]:
         1 for r in Request.objects.filter(status=RequestStatus.PENDING,
                                           user__in=scoped_users(viewer)).select_related("user", "cancels")
         if can_decide_request(viewer, r))
-    advances = sum(
-        1 for a in Advance.objects.filter(status=AdvanceStatus.PENDING).select_related("user")
-        if can_decide_advance(viewer, a))
+    adv_scope = list_scope(viewer) if allowed else None  # the scope /advances lists
+    advances = 0 if adv_scope is None else sum(
+        1 for a in Advance.objects.filter(status=AdvanceStatus.PENDING, user__in=adv_scope)
+        .select_related("user") if can_decide_advance(viewer, a))
     total = requests + advances
     if not allowed and total == 0:
         return None
@@ -85,7 +87,7 @@ def build_team_reports(ctx) -> Optional[dict]:
         required = set(required_users(rt).filter(pk__in=scope_ids).values_list("pk", flat=True))
         unsubmitted = required - submitted_ids
         missing = len(unsubmitted - not_working_ids(unsubmitted, start, end, ctx.today))
-        submitted = len(submitted_ids)  # on-time and late, as in the board
+        submitted = len(submitted_ids)  # on-time + late, deliberately (the board summary's `submitted` is on-time only)
         if submitted or missing:
             types.append({"uuid": str(rt.uuid), "name": rt.name,
                           "submitted": submitted, "missing": missing})

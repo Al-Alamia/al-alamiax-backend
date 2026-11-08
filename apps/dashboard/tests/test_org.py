@@ -59,13 +59,18 @@ class OrgWidgetsTests(ReportsTestCase):
     def test_leads_counts_for_admin(self):
         self.mk_lead("1")
         self.mk_lead("2", when=datetime(2026, 11, 10, 8))
-        self.mk_lead("3", LeadStatuses.INTERESTED)
+        self.mk_lead("3", LeadStatuses.INTERESTED, when=datetime(2026, 11, 10, 9))
         self.mk_lead("4", hidden=True)
         lead = widgets(self.superuser)["leads"]
-        self.assertEqual((lead["unassigned"], lead["new_today"]), (2, 1))
+        self.assertEqual((lead["unassigned"], lead["new_today"]), (2, 2))
         self.assertEqual(lead["by_status"], {s.value: 0 for s in LeadStatuses}
                          | {"new": 2, "interested": 1})
         self.assertEqual(lead["link"], "LEADS")
+
+    def test_new_today_counts_any_status(self):
+        self.mk_lead("5", LeadStatuses.ASSIGNED, when=datetime(2026, 11, 10, 8))
+        self.mk_lead("6", LeadStatuses.ASSIGNED)  # dated 2026-11-09, not today
+        self.assertEqual(widgets(self.superuser)["leads"]["new_today"], 1)
 
     def test_leads_hidden_for_other_department(self):
         self.assertNotIn("leads", widgets(self.agent))  # department code "other"

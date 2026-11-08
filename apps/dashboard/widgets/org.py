@@ -50,7 +50,7 @@ def build_leads(ctx) -> Optional[dict]:
     for row in qs.order_by().values("status").annotate(n=Count("pk", distinct=True)):
         by_status[row["status"]] = row["n"]
     return {
-        "new_today": qs.filter(status=LeadStatuses.NEW, date__date=ctx.today).distinct().count(),
+        "new_today": qs.filter(date__date=ctx.today).distinct().count(),
         "unassigned": by_status[LeadStatuses.NEW],
         "by_status": by_status,
         "link": "LEADS",
