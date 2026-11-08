@@ -6,6 +6,7 @@ from django.db.models import Sum
 from apps.attendance.models import AttendanceDay
 from apps.attendance.types import DayStatus
 from apps.attendance.models import Request
+from apps.attendance.types import RequestStatus
 from apps.notifications.queries import active_rows
 from apps.reports.models import ReportSubmission
 from apps.reports.services.audience import assigned_types, is_required
@@ -47,7 +48,7 @@ def build_attendance_period(ctx) -> Optional[dict]:
 def build_my_requests(ctx) -> Optional[dict]:
     qs = Request.objects.filter(user=ctx.viewer)
     return {
-        "pending_count": qs.filter(status="PENDING").count(),
+        "pending_count": qs.filter(status=RequestStatus.PENDING).count(),
         "latest": [{"uuid": str(r.uuid), "kind": r.kind, "status": r.status,
                     "start_date": r.start_date.isoformat(), "end_date": r.end_date.isoformat()}
                    for r in qs.order_by("-created_at")[:CAP]],
