@@ -48,3 +48,10 @@ class SeedReportsDemoTests(ReportsTestCase):
         before = self.counts()
         call_command("seed_reports_demo", verbosity=0)
         self.assertEqual(self.counts(), before)
+
+    def test_fallback_late_rows_when_none_random(self):
+        from unittest import mock
+        with mock.patch("apps.reports.management.commands.seed_reports_demo.LATE_CHANCE", 0):
+            call_command("seed_reports_demo", verbosity=0)
+        late = ReportSubmission.objects.filter(is_late=True).count()
+        self.assertEqual(late, 2)

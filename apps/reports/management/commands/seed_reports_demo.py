@@ -45,10 +45,13 @@ class Command(BaseCommand):
         rt, created = ReportType.objects.get_or_create(
             name=TYPE_NAME, defaults={"description": "Daily social media activity per account."})
         if created:
-            rt.departments.set(Department.objects.filter(code="marketing"))
+            depts = Department.objects.filter(code="marketing")
+            if not depts.exists():
+                self.stdout.write(self.style.WARNING("No marketing department found; no users will be seeded."))
+            rt.departments.set(depts)
             save_definition(rt, _definition())
-        fields = {(f.section.name, f.label): f for f in
-                  rt.sections.prefetch_related("fields").all() for f in f.fields.all()}
+        sections = list(rt.sections.prefetch_related("fields"))
+        fields = {(s.name, f.label): f for s in sections for f in s.fields.all()}
 
         rng = random.Random(SEED)
         today = date.today()
@@ -60,7 +63,7 @@ class Command(BaseCommand):
                 # draw every time so the sequence stays stable across runs
                 skip, late = rng.random() < MISSING_CHANCE, rng.random() < LATE_CHANCE
                 values = {}
-                for (section, label), field in fields.items():
+                for (section, _label), field in fields.items():
                     if field.kind == "accounts":
                         values[str(field.uuid)] = [f"{user.username}_{section.lower().replace('/', '')}_{i}"
                                                    for i in range(1, rng.randint(1, 3) + 1)]
@@ -80,7 +83,9 @@ class Command(BaseCommand):
                 made += 1
         # guarantee a couple of late rows exist
         if created and not ReportSubmission.objects.filter(report_type=rt, is_late=True).exists():
-            ReportSubmission.objects.filter(report_type=rt).order_by("period_start")[:2].update(is_late=True)
+            ids = list(ReportSubmission.objects.filter(report_type=rt)
+                       .order_by("period_start").values_list("pk", flat=True)[:2])
+            ReportSubmission.objects.filter(pk__in=ids).update(is_late=True)
 
         recolored = 0
         for i, project in enumerate(Project.objects.filter(color=DEFAULT_COLOR).order_by("name", "uuid")):
