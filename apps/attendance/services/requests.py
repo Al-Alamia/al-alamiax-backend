@@ -160,7 +160,7 @@ def _check_overlap(user, kind, start, end, existing) -> None:
 # ---------------------------------------------------------------- helpers
 
 def _lock(req) -> Request:
-    return Request.objects.select_for_update().select_related("user", "created_by").get(pk=req.pk)
+    return Request.objects.select_for_update(of=("self",)).select_related("user", "created_by").get(pk=req.pk)
 
 
 def _require_state(req, *statuses) -> None:
