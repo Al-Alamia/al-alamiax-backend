@@ -66,6 +66,7 @@ LOCAL_APPS = [
     'apps.salaries.apps.SalariesConfig',
     'apps.notifications.apps.NotificationsConfig',
     'apps.activity.apps.ActivityConfig',
+    'apps.mcp_server.apps.McpServerConfig',
 ]
 
 INSTALLED_APPS = INSTALLED_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -254,3 +255,13 @@ ATTENDANCE_TRUST_PROXY = os.environ.get('ATTENDANCE_TRUST_PROXY', '0') == '1'
 # absolute URLs (media links, admin redirects) use https when the client did.
 if os.environ.get('DJANGO_BEHIND_PROXY', '0') == '1':
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+
+# MCP server (OAuth + /mcp). Empty public URL -> derived from the request.
+MCP_PUBLIC_URL = os.environ.get('MCP_PUBLIC_URL', '').strip().rstrip('/')
+MCP_FRONTEND_URL = os.environ.get('MCP_FRONTEND_URL', '').strip().rstrip('/') or MCP_PUBLIC_URL
+# The public origin is added at runtime by the MCP code.
+MCP_ALLOWED_ORIGINS = [
+    o.strip() for o in os.environ.get('MCP_ALLOWED_ORIGINS', 'https://claude.ai,https://chatgpt.com').split(',')
+    if o.strip()
+]

@@ -49,6 +49,7 @@ urlpatterns = [
     path('api/notifications/', include('apps.notifications.urls')),
     path('api/treasury/',include('apps.treasury.urls')),
     path('api/hr-management/',include('apps.purposes.urls')),
+    path('', include('apps.mcp_server.urls')),
     # path('media/',include('users.api.media_urls'))
 ]
 
