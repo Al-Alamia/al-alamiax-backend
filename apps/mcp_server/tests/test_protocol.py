@@ -59,6 +59,14 @@ class ProtocolTests(McpTestCase):
         self.assertEqual(r.json(), {"error": "invalid_token"})
         self.assertTrue(r["WWW-Authenticate"].endswith(', error="invalid_token"'))
 
+    def test_must_change_password_401(self):
+        tok = self.token_for(self.manager)
+        msg = {"jsonrpc": "2.0", "id": 1, "method": "ping"}
+        self.assertEqual(self.post(msg, tok).status_code, 200)
+        self.manager.must_change_password = True
+        self.manager.save()
+        self.assertEqual(self.post(msg, tok).status_code, 401)
+
     def test_ineligible_user_401(self):
         tok = self.token_for(self.manager)
         msg = {"jsonrpc": "2.0", "id": 1, "method": "ping"}

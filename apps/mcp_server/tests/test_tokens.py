@@ -41,6 +41,20 @@ class TokenTests(McpTestCase):
         self.assertIsNone(resolve_access(pair["access_token"]))
         self.assertFalse(OAuthToken.objects.filter(revoked_at__isnull=True).exists())
 
+    def test_second_revoke_keeps_original_revoked_by(self):
+        pair = issue_pair(self.grant)
+        revoke_grant(self.grant, by=self.owner)
+        with self.assertRaises(OAuthError):
+            rotate_refresh(pair["refresh_token"], self.client_obj)
+        self.grant.refresh_from_db()
+        self.assertEqual(self.grant.revoked_by, self.owner)
+
+    def test_must_change_password_none(self):
+        pair = issue_pair(self.grant)
+        self.manager.must_change_password = True
+        self.manager.save()
+        self.assertIsNone(resolve_access(pair["access_token"]))
+
     def test_ineligible_user_none(self):
         pair = issue_pair(self.grant)
         self.manager.is_active = False

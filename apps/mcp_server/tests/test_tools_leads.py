@@ -48,6 +48,28 @@ class LeadToolsTests(McpTestCase):
         self.assertTrue(res["isError"])
         self.assertEqual(res["structuredContent"]["error"], "forbidden")
 
+    def test_get_lead_hides_invisible_agent_refs(self):
+        assign(self.lead, self.other_agent, kind="cs", by=self.manager)
+        LeadUpdate.objects.create(lead=self.lead, by=self.other_agent, type="note", note="x")
+        res = self.call(self.manager, "get_lead", {"lead_uuid": str(self.lead.pk)})
+        self.assertFalse(res["isError"])
+        data = res["structuredContent"]
+        self.assertIsNone(data["cs_agent"])
+        self.assertEqual(data["sales_agent"]["uuid"], str(self.agent.pk))
+        by_kind = {a["kind"]: a["agent"] for a in data["assignments"]}
+        self.assertIsNone(by_kind["cs"])
+        self.assertIsNotNone(by_kind["sales"])
+        self.assertIsNone(data["created_by"])
+        self.assertIsNone(data["history"][0]["by"])
+
+    def test_subscription_seller_hidden_when_invisible(self):
+        make_subscription(self.lead, self.other_agent)
+        res = self.call(self.manager, "list_subscriptions", {})
+        self.assertFalse(res["isError"])
+        items = res["structuredContent"]["items"]
+        self.assertTrue(items)
+        self.assertIsNone(items[0]["seller"])
+
     def test_get_lead_detail_and_not_found(self):
         LeadUpdate.objects.create(lead=self.lead, by=self.manager, type="note", note="hi")
         res = self.call(self.agent, "get_lead", {"lead_uuid": str(self.lead.pk)})

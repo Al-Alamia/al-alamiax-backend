@@ -85,6 +85,9 @@ class TokenEndpointTests(McpTestCase):
     def test_short_verifier_invalid_grant(self):
         self.assert_error(self.exchange(self.get_code(), code_verifier="v" * 42), "invalid_grant")
 
+    def test_trailing_newline_verifier_invalid_grant(self):
+        self.assert_error(self.exchange(self.get_code(), code_verifier=VERIFIER + "\n"), "invalid_grant")
+
     def test_wrong_redirect_invalid_grant(self):
         self.assert_error(self.exchange(self.get_code(), redirect_uri=REDIRECT + "/x"),
                           "invalid_grant")

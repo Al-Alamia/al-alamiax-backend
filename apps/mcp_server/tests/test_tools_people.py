@@ -136,6 +136,15 @@ class PeopleToolsTests(McpTestCase):
         self.assertEqual(data["plans"][0]["metric"], "lead_count")
         self.assertEqual(data["plans"][0]["tiers"], 1)
 
+    def test_get_team_hides_invisible_leader_and_members(self):
+        team = Team.objects.create(name="Mixed", department=self.department, leader=self.hr)
+        team.agents.add(self.agent, self.other_agent)
+        res = self.call(self.manager, "get_team", {"team_uuid": str(team.pk)})
+        self.assertFalse(res["isError"])
+        data = res["structuredContent"]
+        self.assertIsNone(data["leader"])
+        self.assertEqual([m["uuid"] for m in data["members"]], [str(self.agent.pk)])
+
     def test_get_team_not_visible(self):
         other_team = Team.objects.create(name="Z", department=self.other_agent.department)
         res = self.call(self.manager, "get_team", {"team_uuid": str(other_team.pk)})
