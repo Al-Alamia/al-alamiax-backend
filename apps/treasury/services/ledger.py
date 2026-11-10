@@ -56,12 +56,16 @@ def _outcome(qs):
             - _sum(qs.filter(direction=Direction.IN, reverses__isnull=False)))
 
 
-def balance(month: Optional[dt.date]) -> dict:
-    qs = _in_month(TreasuryEntry.objects.all(), month)
+def totals(qs) -> dict:
+    """income / outcome / net of a TreasuryEntry queryset (reversals netted)."""
     income = (_sum(qs.filter(direction=Direction.IN, reverses__isnull=True))
               - _sum(qs.filter(direction=Direction.OUT, reverses__isnull=False)))
     outcome = _outcome(qs)
     return {"income": income, "outcome": outcome, "net": income - outcome}
+
+
+def balance(month: Optional[dt.date]) -> dict:
+    return totals(_in_month(TreasuryEntry.objects.all(), month))
 
 
 def group_breakdown(month: Optional[dt.date]) -> list:
