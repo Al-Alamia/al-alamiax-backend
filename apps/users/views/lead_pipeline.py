@@ -13,7 +13,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.users.lead_permissions import capabilities, row_can, scope_queryset
+from apps.users.lead_permissions import capabilities, get_visible_lead, row_can, scope_queryset
 from apps.users.lead_roles import resolve_role
 from apps.users.models import Lead, LeadScreenshot, User
 from apps.users.serializers.lead_pipeline import (
@@ -312,10 +312,7 @@ class LeadViewSet(viewsets.ModelViewSet):
     # ---- admin actions ----------------------------------------------------------
 
     def _get_for_hide(self, uuid):
-        user = self.request.user
-        lead = scope_queryset(user, Lead.objects.all()).filter(uuid=uuid).first()
-        if lead is None and capabilities(user)["view_hidden"]:
-            lead = scope_queryset(user, Lead.objects.all(), hidden=True).filter(uuid=uuid).first()
+        lead = get_visible_lead(self.request.user, uuid)
         if lead is None:
             raise Http404
         return lead

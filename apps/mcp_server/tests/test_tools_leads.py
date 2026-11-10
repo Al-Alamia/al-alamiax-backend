@@ -85,16 +85,46 @@ class LeadToolsTests(McpTestCase):
         self.assertTrue(res["isError"])
         self.assertEqual(res["structuredContent"]["error"], "forbidden")
 
-    def test_sales_totals(self):
+    def test_hidden_leads(self):
+        Lead = type(self.lead)
+        Lead.objects.filter(pk=self.lead.pk).update(is_hidden=True)
+        res = self.call(self.manager, "get_lead", {"lead_uuid": str(self.lead.pk)})
+        self.assertFalse(res["isError"])
+        self.assertTrue(res["structuredContent"]["is_hidden"])
+        res = self.call(self.agent, "get_lead", {"lead_uuid": str(self.lead.pk)})
+        self.assertEqual(res["structuredContent"]["error"], "not_found")
+        res = self.call(self.manager, "search_leads", {"hidden": True})
+        self.assertEqual([i["uuid"] for i in res["structuredContent"]["items"]], [str(self.lead.pk)])
+        self.assertTrue(res["structuredContent"]["items"][0]["is_hidden"])
+        res = self.call(self.manager, "search_leads", {})
+        self.assertNotIn(str(self.lead.pk), [i["uuid"] for i in res["structuredContent"]["items"]])
+        res = self.call(self.agent, "search_leads", {"hidden": True})
+        self.assertEqual(res["structuredContent"]["error"], "forbidden")
+
+    def test_sales_totals_own_for_agent(self):
         sub = make_subscription(self.lead, self.agent)
         make_payment(sub, "400", date.today())
         res = self.call(self.agent, "sales_totals", {})
         self.assertFalse(res["isError"])
         data = res["structuredContent"]
-        self.assertEqual(data["deal_count"], 1)
-        self.assertEqual(data["sales_amount"], "400.00")
-        self.assertEqual(data["by_kind"]["new"]["deal_count"], 1)
-        res = self.call(self.manager, "sales_totals", {"period": "2020-01"})
-        self.assertEqual(res["structuredContent"]["deal_count"], 0)
+        self.assertEqual([r["seller"]["uuid"] for r in data["sellers"]], [str(self.agent.pk)])
+        self.assertEqual(data["sellers"][0]["deal_count"], 1)
+        self.assertEqual(data["total"]["sales_amount"], "400.00")
+        self.assertEqual(data["sellers"][0]["by_kind"]["new"]["deal_count"], 1)
+
+    def test_sales_totals_manager_scope_and_hr_hidden_owner(self):
+        for seller, name in ((self.agent, "a"), (self.other_agent, "b"), (self.owner, "c")):
+            lead = make_lead(seller, name=name)
+            make_payment(make_subscription(lead, seller), "100", date.today())
+        data = self.call(self.manager, "sales_totals", {})["structuredContent"]
+        got = {r["seller"]["uuid"] for r in data["sellers"]}
+        self.assertEqual(got, {str(self.agent.pk), str(self.manager.pk)})
+        self.assertEqual(data["total"]["deal_count"], 1)
+        res = self.call(self.manager, "sales_totals", {"seller_uuid": str(self.other_agent.pk)})
+        self.assertEqual(res["structuredContent"]["error"], "not_found")
+        res = self.call(self.hr, "sales_totals", {"seller_uuid": str(self.owner.pk)})
+        self.assertEqual(res["structuredContent"]["error"], "not_found")
+        data = self.call(self.hr, "sales_totals", {})["structuredContent"]
+        self.assertEqual([r["seller"]["uuid"] for r in data["sellers"]], [str(self.hr.pk)])
         res = self.call(self.manager, "sales_totals", {"period": "2020-13"})
         self.assertTrue(res["isError"])

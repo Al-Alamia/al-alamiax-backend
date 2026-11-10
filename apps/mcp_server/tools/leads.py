@@ -2,6 +2,7 @@ import uuid as uuid_lib
 from datetime import date
 from decimal import Decimal
 
+from django.db.models import Q
 from rest_framework.exceptions import PermissionDenied
 
 from apps.attendance.models import AttendanceSettings
@@ -17,8 +18,8 @@ from apps.subscriptions.serializers import money, user_ref
 from apps.subscriptions.services import paid_amount
 from apps.subscriptions.types import SubscriptionKind
 from apps.users.admin_permissions import can_view_user
-from apps.users.lead_permissions import active_assignment, scope_queryset
-from apps.users.models import Lead
+from apps.users.lead_permissions import active_assignment, get_visible_lead, scope_queryset
+from apps.users.models import Lead, User
 from apps.users.services.leads import apply_lead_filters
 from apps.users.types import AssignmentKinds, LeadStatuses
 
@@ -47,6 +48,7 @@ def _lead_item(lead):
         "name": lead.name,
         "phone": lead.phone,
         "status": lead.status,
+        "is_hidden": lead.is_hidden,
         "project": {"uuid": str(lead.project_id), "name": lead.project.name} if lead.project_id else None,
         "sales_agent": _agent_ref(active_assignment(lead, AssignmentKinds.SALES.value)),
         "cs_agent": _agent_ref(active_assignment(lead, AssignmentKinds.CS.value)),
@@ -67,6 +69,8 @@ def _lead_item(lead):
           "project": {"type": "string", "maxLength": 100, "description": "Project name or uuid"},
           "created_from": {"type": "string", "format": "date"},
           "created_to": {"type": "string", "format": "date"},
+          "hidden": {"type": "boolean", "default": False,
+                     "description": "List hidden leads instead (admins only)"},
           "limit": limit_schema()}})
 def search_leads(user, args):
     params = {"search": args.get("query", "").strip(), "status": args.get("status"),
@@ -80,7 +84,8 @@ def search_leads(user, args):
         else:
             project_name = project
     qs = scope_queryset(
-        user, Lead.objects.select_related("user", "project").prefetch_related("assignments__agent"))
+        user, Lead.objects.select_related("user", "project").prefetch_related("assignments__agent"),
+        hidden=args["hidden"])
     qs = apply_lead_filters(qs, params)
     if project_name:
         qs = qs.filter(project__name__icontains=project_name)
@@ -118,9 +123,10 @@ def _lead_subscriptions(user, lead):
       schema={"type": "object", "required": ["lead_uuid"], "properties": {
           "lead_uuid": {"type": "string", "format": "uuid"}}})
 def get_lead(user, args):
-    lead = (scope_queryset(user, Lead.objects.select_related("user", "project")
-                           .prefetch_related("assignments__agent", "assignments__assigned_by"))
-            .filter(uuid=args["lead_uuid"]).first())
+    lead = get_visible_lead(
+        user, args["lead_uuid"],
+        Lead.objects.select_related("user", "project")
+        .prefetch_related("assignments__agent", "assignments__assigned_by"))
     if lead is None:
         raise ToolError("Lead not found", "not_found")
     data = _lead_item(lead)
@@ -200,20 +206,59 @@ def _bucket(b):
             "american_sales_amount": money(b["american_sales_amount"])}
 
 
+def _seller_result(raw):
+    data = _bucket(raw)
+    data["by_kind"] = {str(k): _bucket(v) for k, v in raw["by_kind"].items()}
+    return data
+
+
+def _add(acc, raw):
+    for key in ("deal_count", "sales_amount", "american_deal_count", "american_sales_amount"):
+        acc[key] += raw[key]
+
+
+def _visible_sellers(viewer):
+    """Sellers the subscriptions scoping lets the viewer see, limited to users they may view."""
+    try:
+        ids = sub_perms.visible_seller_ids(viewer)
+    except PermissionDenied:
+        ids = {viewer.pk}
+    users = User.objects.select_related("department")
+    if ids is None:
+        users = users.filter(Q(pk=viewer.pk) | Q(subscriptions_sold__isnull=False)).distinct()
+    else:
+        users = users.filter(pk__in=ids)
+    return [u for u in users.order_by("username") if can_view_user(viewer, u)]
+
+
 @tool("sales_totals", title="Sales totals",
-      description="Your own sales totals (deal count and collected amount in SAR, total and by "
-                  "new/renewal) for a payroll period.",
+      description="Sales totals (deal count and collected amount in SAR, total and by new/renewal) "
+                  "for a payroll period, per seller you are allowed to see (yourself, your team or "
+                  "all sellers depending on role) plus a combined total. Optionally for one seller.",
       schema={"type": "object", "properties": {
           "period": {"type": "string", "pattern": r"^\d{4}-\d{2}$",
-                     "description": "YYYY-MM payroll period, defaults to the current one"}}})
+                     "description": "YYYY-MM payroll period, defaults to the current one"},
+          "seller_uuid": {"type": "string", "format": "uuid"}}})
 def sales_totals(user, args):
     key = args.get("period") or period_key_for(date.today(), AttendanceSettings.get().period_start_day)
     try:
         start, end = period_bounds(key)
     except BasicError:
         raise ToolError("Invalid period", "invalid_arguments")
-    raw = compute_sales_totals(user, start, end)
-    data = _bucket(raw)
-    data["by_kind"] = {str(k): _bucket(v) for k, v in raw["by_kind"].items()}
-    data["period"] = {"key": key, "start": str(start), "end": str(end)}
-    return "%d deals in %s" % (data["deal_count"], key), data
+    sellers = _visible_sellers(user)
+    if args.get("seller_uuid"):
+        sellers = [s for s in sellers if s.pk == args["seller_uuid"]]
+        if not sellers:
+            raise ToolError("Seller not found", "not_found")
+    truncated = len(sellers) > 100
+    sellers = sellers[:100]
+    total = {"deal_count": 0, "sales_amount": ZERO,
+             "american_deal_count": 0, "american_sales_amount": ZERO}
+    rows = []
+    for seller in sellers:
+        raw = compute_sales_totals(seller, start, end)
+        _add(total, raw)
+        rows.append({"seller": user_brief(seller), **_seller_result(raw)})
+    data = {"period": {"key": key, "start": str(start), "end": str(end)},
+            "sellers": rows, "total": _bucket(total), "truncated": truncated}
+    return "%d deals by %d sellers in %s" % (total["deal_count"], len(rows), key), data

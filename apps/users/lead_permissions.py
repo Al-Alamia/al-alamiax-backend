@@ -117,3 +117,14 @@ def capabilities(user) -> dict:
         "department": role.department,
         "level": role.level,
     }
+
+
+def get_visible_lead(user, uuid, qs=None):
+    """Lead by uuid within the viewer's scope; hidden leads too when they hold view_hidden."""
+    from .models import Lead
+
+    base = Lead.objects.all() if qs is None else qs
+    lead = scope_queryset(user, base).filter(uuid=uuid).first()
+    if lead is None and capabilities(user)["view_hidden"]:
+        lead = scope_queryset(user, base, hidden=True).filter(uuid=uuid).first()
+    return lead

@@ -36,13 +36,20 @@ def _lead_in_scope(user, lead) -> bool:
     return scope_queryset(user, Lead.objects.filter(pk=lead.pk)).exists()
 
 
-def scope_subscriptions(user, qs):
+def visible_seller_ids(user):
+    """None when the viewer sees every seller, else the set of seller ids; no access -> PermissionDenied."""
     role = resolve_role(user)
     if _sees_all(role):
-        return qs
+        return None
     if role.department != _SALES or role.level == MANAGER:
         raise PermissionDenied(DENIED_MESSAGE)
-    seller_ids = {user.pk} | (set(role.team_member_ids) if role.level == LEADER else set())
+    return {user.pk} | (set(role.team_member_ids) if role.level == LEADER else set())
+
+
+def scope_subscriptions(user, qs):
+    seller_ids = visible_seller_ids(user)
+    if seller_ids is None:
+        return qs
     # Seller match is not filtered by hidden leads; the lead-scope part excludes them.
     lead_scope = scope_queryset(user, Lead.objects.all()).values("pk")
     return qs.filter(Q(lead_id__in=lead_scope) | Q(seller_id__in=seller_ids))
