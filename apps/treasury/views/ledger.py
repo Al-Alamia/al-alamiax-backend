@@ -115,31 +115,13 @@ def breakdown(request):
                      for r in ledger.group_breakdown(month)])
 
 
-def _filtered_entries(params):
-    qs = TreasuryEntry.objects.select_related("group", "created_by")
-    if params.get("direction"):
-        qs = qs.filter(direction=params["direction"])
-    if params.get("category"):
-        qs = qs.filter(category=params["category"])
-    group = params.get("group")
-    if group == "none":
-        qs = qs.filter(group__isnull=True)
-    elif group:
-        qs = qs.filter(group_id=_uuid(group))
-    if params.get("date_from"):
-        qs = qs.filter(date__gte=_date(params["date_from"], "date_from"))
-    if params.get("date_to"):
-        qs = qs.filter(date__lte=_date(params["date_to"], "date_to"))
-    return qs
-
-
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 @top_only
 def entries(request):
     if request.method == "GET":
         pager = EntryPagination()
-        page = pager.paginate_queryset(_filtered_entries(request.query_params), request)
+        page = pager.paginate_queryset(ledger.filter_entries(request.query_params), request)
         return pager.get_paginated_response([s.entry_data(e) for e in page])
     b = _body(request)
     entry = ledger.add_entry(

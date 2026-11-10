@@ -93,3 +93,18 @@ class MiscToolsTests(McpTestCase):
         for e in res["items"]:
             for ref in (e["actor"], e["subject"]):
                 self.assertNotEqual((ref or {}).get("uuid"), str(self.owner.pk))
+
+    def test_board_summary_excludes_hidden_users(self):
+        rt = ReportType.objects.create(name="R3", frequency="daily")
+        rt.departments.set([self.owner.department])
+        full = self.call(self.hr, "report_board", {"report_type_uuid": str(rt.pk)})["structuredContent"]
+        total = sum(full["summary"][k] for k in ("submitted", "late", "missing", "not_required"))
+        self.assertEqual(total, len(full["rows"]))
+        self.assertNotIn(str(self.owner.pk), {r["user"]["uuid"] for r in full["rows"]})
+
+    def test_team_activity_drops_hidden_events_entirely(self):
+        record_event(self.owner, "user.updated", subject=self.agent, label="OWNERLABEL")
+        record_event(self.agent, "user.updated", subject=self.owner, label="OWNERLABEL")
+        res = self.call(self.hr, "team_activity")["structuredContent"]
+        self.assertNotIn("OWNERLABEL", str(res["items"]))
+        self.assertEqual(res["truncated"], False)

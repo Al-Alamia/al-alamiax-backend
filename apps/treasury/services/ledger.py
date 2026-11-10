@@ -56,6 +56,37 @@ def _outcome(qs):
             - _sum(qs.filter(direction=Direction.IN, reverses__isnull=False)))
 
 
+def filter_entries(params):
+    """Entries queryset filtered by direction/category/group ('none' or uuid)/date_from/date_to."""
+    def _id(raw):
+        try:
+            return uuid.UUID(str(raw))
+        except (ValueError, TypeError, AttributeError):
+            raise TreasuryError("invalid", "Invalid id.")
+
+    def _day(raw, field):
+        try:
+            return dt.datetime.strptime(str(raw), "%Y-%m-%d").date()
+        except ValueError:
+            raise TreasuryError("invalid", f"{field} must be YYYY-MM-DD.")
+
+    qs = TreasuryEntry.objects.select_related("group", "created_by")
+    if params.get("direction"):
+        qs = qs.filter(direction=params["direction"])
+    if params.get("category"):
+        qs = qs.filter(category=params["category"])
+    group = params.get("group")
+    if group == "none":
+        qs = qs.filter(group__isnull=True)
+    elif group:
+        qs = qs.filter(group_id=_id(group))
+    if params.get("date_from"):
+        qs = qs.filter(date__gte=_day(params["date_from"], "date_from"))
+    if params.get("date_to"):
+        qs = qs.filter(date__lte=_day(params["date_to"], "date_to"))
+    return qs
+
+
 def totals(qs) -> dict:
     """income / outcome / net of a TreasuryEntry queryset (reversals netted)."""
     income = (_sum(qs.filter(direction=Direction.IN, reverses__isnull=True))

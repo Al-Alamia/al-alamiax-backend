@@ -32,10 +32,13 @@ def _money(d: Decimal) -> str:
     return str(d.quantize(Decimal("0.01")))
 
 
-def build_board(report_type, viewer, any_date: date, today: date, project_uuid=None) -> dict:
+def build_board(report_type, viewer, any_date: date, today: date, project_uuid=None, user_ids=None) -> dict:
+    """``user_ids`` (optional set/None) further restricts the supervised scope (rows and summary)."""
     start, end = period_for(report_type, any_date)
 
     scope_ids = set(supervised_users(viewer).values_list("pk", flat=True))
+    if user_ids is not None:
+        scope_ids &= set(user_ids)
     submissions = list(
         ReportSubmission.objects
         .filter(report_type=report_type, period_start=start, user_id__in=scope_ids)

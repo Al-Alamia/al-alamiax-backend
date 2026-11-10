@@ -47,14 +47,31 @@ def team_activity(user, args):
         qs = qs.filter(Q(actor_id=target.pk) | Q(subject_id=target.pk))
         users = users.filter(pk=target.pk)
     limit = args["limit"]
-    qs = qs.order_by("-created_at", "-pk")[:limit + 1]
+    qs = qs.order_by("-created_at", "-pk")
+    seen = {}
+
+    def ok(u):
+        if u is None:
+            return True
+        if u.pk not in seen:
+            seen[u.pk] = _vis(user, u)
+        return seen[u.pk]
+
+    def kept():
+        n = 0
+        for e in qs.iterator():
+            if ok(e.actor) and ok(e.subject):
+                yield e
+                n += 1
+                if n > limit:
+                    return
 
     def event(e):
         return {"uuid": str(e.uuid), "created_at": e.created_at.isoformat(), "verb": e.verb,
                 "area": e.area, "actor": _ref(user, e.actor), "subject": _ref(user, e.subject),
                 "target_type": e.target_type, "target_label": e.target_label, "data": e.data}
 
-    res = list_result(qs, event, limit)
+    res = list_result(kept(), event, limit)
     rows = presence_rows([u for u in users if _vis(user, u)], datetime.now())
     res["presence"] = [{"uuid": r["user"]["uuid"], "name": r["user"]["name"], "role": r["user"]["role"],
                         "online": r["online"], "last_seen": r["last_seen"],

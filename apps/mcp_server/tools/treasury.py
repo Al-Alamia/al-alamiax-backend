@@ -4,7 +4,6 @@ from apps.mcp_server.tools.common import is_top, limit_schema, list_result
 from apps.treasury import serializers as s
 from apps.treasury.models import ProjectGroup
 from apps.treasury.services import ledger
-from apps.treasury.views.ledger import _filtered_entries
 from apps.users.admin_permissions import can_view_user
 
 GROUP = {"type": "string", "format": "uuid", "description": "Project group uuid (omit for all)"}
@@ -42,7 +41,7 @@ def _entry(viewer, e):
 def treasury_balance(user, args):
     if not is_top(user):
         raise ToolError("Only the owner can access the treasury.", "forbidden")
-    t = s.totals_data(ledger.totals(_filtered_entries(_params(args)).order_by()))
+    t = s.totals_data(ledger.totals(ledger.filter_entries(_params(args)).order_by()))
     return "Treasury net %s (in %s, out %s)" % (t["net"], t["income"], t["outcome"]), t
 
 
@@ -64,6 +63,6 @@ def list_treasury_entries(user, args):
     if args.get("category"):
         p["category"] = args["category"]
     limit = args["limit"]
-    qs = _filtered_entries(p).order_by("-date", "-created_at")[:limit + 1]
+    qs = ledger.filter_entries(p).order_by("-date", "-created_at")[:limit + 1]
     res = list_result(qs, lambda e: _entry(user, e), limit)
     return "%d treasury entries%s" % (res["count"], " (truncated)" if res["truncated"] else ""), res

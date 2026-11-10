@@ -8,6 +8,7 @@ from apps.reports.permissions import can_view_board
 from apps.reports.services.board import build_board
 from apps.users.services.marketing_dashboard import build_dashboard
 from apps.users.admin_permissions import can_view_user
+from apps.teams.permissions import supervised_users
 from apps.users.models import User
 
 _FORBIDDEN = "You do not have permission to do that."
@@ -39,11 +40,10 @@ def report_board(user, args):
         raise ToolError("Report type not found", "not_found")
     today = date.today()
     project = args.get("project_uuid")
-    data = build_board(rt, user, args.get("date") or today, today, project and str(project))
+    ids = {u.pk for u in supervised_users(user).select_related("department")
+           if u.pk == user.pk or can_view_user(user, u)}
+    data = build_board(rt, user, args.get("date") or today, today, project and str(project), user_ids=ids)
     data["period"] = {k: v.isoformat() for k, v in data["period"].items()}
-    visible = {r["user"]["uuid"] for r in data["rows"]
-               if _can_see(user, r["user"]["uuid"])}
-    data["rows"] = [r for r in data["rows"] if r["user"]["uuid"] in visible]
     return "Board %s: %d rows" % (rt.name, len(data["rows"])), data
 
 
