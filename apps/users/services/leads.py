@@ -1,4 +1,5 @@
 from django.db import IntegrityError, transaction
+from django.db.models import Exists, OuterRef, Q
 
 from apps.activity.services.events import record_event
 from apps.users.lead_roles import LEADER, resolve_role
@@ -6,6 +7,43 @@ from apps.users.lead_permissions import active_assignment
 from apps.users.models import LeadAssignment, LeadReturn, LeadUpdate
 from apps.users.types import AssignmentKinds, DepartmentCodes, LeadStatuses, LeadUpdateTypes
 from utils.working_days import return_days_left
+
+
+def apply_lead_filters(qs, params):
+    """Pipeline list filters; ``params`` is any mapping (query params or a dict of the same keys)."""
+    if params.get("search"):
+        term = params["search"]
+        qs = qs.filter(Q(name__icontains=term) | Q(phone__icontains=term))
+    for field in ("status", "call_status", "stock_market"):
+        if params.get(field):
+            qs = qs.filter(**{field: params[field]})
+    if params.get("project"):
+        qs = qs.filter(project_id=params["project"])
+    if params.get("created_by"):
+        qs = qs.filter(user_id=params["created_by"])
+    if params.get("assigned_to"):
+        qs = qs.filter(
+            Exists(
+                LeadAssignment.objects.filter(
+                    lead=OuterRef("pk"), is_active=True, agent_id=params["assigned_to"]
+                )
+            )
+        )
+    if params.get("unassigned") == "true":
+        qs = qs.filter(
+            ~Exists(
+                LeadAssignment.objects.filter(
+                    lead=OuterRef("pk"), is_active=True, kind=AssignmentKinds.SALES.value
+                )
+            )
+        )
+    if params.get("returned") == "true":
+        qs = qs.filter(return_count__gt=0)
+    if params.get("date_from"):
+        qs = qs.filter(date__date__gte=params["date_from"])
+    if params.get("date_to"):
+        qs = qs.filter(date__date__lte=params["date_to"])
+    return qs
 
 
 class LeadRuleError(Exception):

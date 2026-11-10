@@ -3,7 +3,7 @@ from uuid import UUID
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Exists, OuterRef, Q
+from django.db.models import Q
 from django.http import Http404
 from django.utils.dateparse import parse_date
 from rest_framework import serializers, status as http_status
@@ -15,14 +15,14 @@ from rest_framework.response import Response
 
 from apps.users.lead_permissions import capabilities, row_can, scope_queryset
 from apps.users.lead_roles import resolve_role
-from apps.users.models import Lead, LeadAssignment, LeadScreenshot, User
+from apps.users.models import Lead, LeadScreenshot, User
 from apps.users.serializers.lead_pipeline import (
     LeadDetailSerializer,
     LeadListSerializer,
     LeadUpdateSerializer,
     LeadWriteSerializer,
 )
-from apps.users.services.leads import LeadRuleError, assign_leads, log_update, return_lead
+from apps.users.services.leads import LeadRuleError, apply_lead_filters, assign_leads, log_update, return_lead
 from apps.users.types import AssignmentKinds, CallStatuses, DepartmentCodes, LeadStatuses, LeadUpdateTypes
 
 from utils.phones import normalize_sa_phone
@@ -100,38 +100,7 @@ class LeadViewSet(viewsets.ModelViewSet):
             Lead.objects.select_related("user", "project").prefetch_related("assignments__agent"),
             hidden=params.get("hidden") == "true",
         )
-        if params.get("search"):
-            term = params["search"]
-            qs = qs.filter(Q(name__icontains=term) | Q(phone__icontains=term))
-        for field in ("status", "call_status", "stock_market"):
-            if params.get(field):
-                qs = qs.filter(**{field: params[field]})
-        if params.get("project"):
-            qs = qs.filter(project_id=params["project"])
-        if params.get("created_by"):
-            qs = qs.filter(user_id=params["created_by"])
-        if params.get("assigned_to"):
-            qs = qs.filter(
-                Exists(
-                    LeadAssignment.objects.filter(
-                        lead=OuterRef("pk"), is_active=True, agent_id=params["assigned_to"]
-                    )
-                )
-            )
-        if params.get("unassigned") == "true":
-            qs = qs.filter(
-                ~Exists(
-                    LeadAssignment.objects.filter(
-                        lead=OuterRef("pk"), is_active=True, kind=AssignmentKinds.SALES.value
-                    )
-                )
-            )
-        if params.get("returned") == "true":
-            qs = qs.filter(return_count__gt=0)
-        if params.get("date_from"):
-            qs = qs.filter(date__date__gte=params["date_from"])
-        if params.get("date_to"):
-            qs = qs.filter(date__date__lte=params["date_to"])
+        qs = apply_lead_filters(qs, params)
         return qs
 
     def get_queryset(self):
