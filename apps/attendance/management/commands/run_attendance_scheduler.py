@@ -66,6 +66,13 @@ class Command(BaseCommand):
         self.last_prune_date = now.date()
         if page_views or events:
             self.log(f"pruned {page_views} page views, {events} events")
+        try:
+            from apps.mcp_server.retention import prune as prune_mcp
+            counts = prune_mcp(now)
+            if any(counts.values()):
+                self.log("pruned mcp: " + ", ".join(f"{v} {k}" for k, v in counts.items()))
+        except Exception:
+            self.log("mcp prune failed:\n" + traceback.format_exc())
 
     def maybe_reports(self, now: datetime) -> None:
         sent = run_reminders(now)

@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import protocol
+from . import protocol, views
 from .oauth import authorize, metadata, registration, token
 
 urlpatterns = [
@@ -12,4 +12,7 @@ urlpatterns = [
     path("oauth/token", token.token),
     path("mcp", protocol.mcp_endpoint),
     path("api/mcp/oauth/consent", authorize.consent),
+    path("api/mcp/grants", views.grants),
+    path("api/mcp/grants/<uuid:grant_uuid>", views.revoke),
+    path("api/mcp/access", views.access),
 ]
