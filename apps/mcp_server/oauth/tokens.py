@@ -80,7 +80,7 @@ def rotate_refresh(raw: str, client: OAuthClient) -> dict:
         if claimed:
             grant.last_used_at = now
             grant.save(update_fields=["last_used_at", "updated_at"])
-            return issue_pair(grant)
+            return issue_pair(grant, code=token.code)
     # Lost the compare-and-set: a concurrent request already used this token.
     revoke_grant(grant)
     raise invalid

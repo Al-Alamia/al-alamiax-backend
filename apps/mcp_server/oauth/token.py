@@ -39,7 +39,14 @@ def _params(request) -> dict:
         if not isinstance(data, dict):
             raise OAuthError("invalid_request", "Body must be a JSON object")
         return {k: v for k, v in data.items() if isinstance(v, str)}
-    return {k: v for k, v in request.POST.items()}
+    try:
+        return {k: v for k, v in request.POST.items()}
+    except Exception:
+        raise OAuthError("invalid_request", "Malformed request body")
+
+
+def _has_control(value) -> bool:
+    return any(ord(c) < 32 or ord(c) == 127 for c in value)
 
 
 def _required(p, *names):
@@ -106,6 +113,8 @@ def token(request):
             raise OAuthError("unsupported_grant_type",
                              "grant_type must be authorization_code or refresh_token")
         _required(p, "client_id")
+        if _has_control(p["client_id"]):
+            raise OAuthError("invalid_client", "Unknown client_id", 401)
         client = OAuthClient.objects.filter(client_id=p["client_id"]).first()
         if client is None:
             raise OAuthError("invalid_client", "Unknown client_id", 401)

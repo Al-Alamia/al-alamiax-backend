@@ -169,3 +169,20 @@ class TokenEndpointTests(McpTestCase):
         r = self.client.options(TOKEN)
         self.assertEqual(r.status_code, 204)
         self.assertEqual(r["Access-Control-Allow-Origin"], "*")
+
+    def test_nul_in_client_id_is_4xx(self):
+        r = self.client.post(TOKEN, {"grant_type": "refresh_token", "refresh_token": "x",
+                                     "client_id": "abc\x00"})
+        self.assert_error(r, "invalid_client", 401)
+        r = self.client.post(TOKEN, json.dumps({"grant_type": "refresh_token",
+                                                "refresh_token": "x", "client_id": "abc\x00"}),
+                             content_type="application/json")
+        self.assert_error(r, "invalid_client", 401)
+
+    def test_code_reuse_kills_rotated_tokens(self):
+        code = self.get_code()
+        first = self.exchange(code).json()
+        rotated = self.refresh(first["refresh_token"]).json()
+        self.assert_error(self.exchange(code), "invalid_grant")
+        self.assertIsNone(resolve_access(rotated["access_token"]))
+        self.assert_error(self.refresh(rotated["refresh_token"]), "invalid_grant")
