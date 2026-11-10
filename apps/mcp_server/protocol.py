@@ -57,7 +57,7 @@ def _bearer(request):
 
 
 def _unauthorized(request, sent, origin):
-    challenge = 'Bearer resource_metadata="%s/.well-known/oauth-protected-resource"' % public_base(request)
+    challenge = 'Bearer resource_metadata="%s/.well-known/oauth-protected-resource/mcp"' % public_base(request)
     if sent:
         challenge += ', error="invalid_token"'
     response = _json({"error": "invalid_token" if sent else "unauthorized"}, 401, origin)

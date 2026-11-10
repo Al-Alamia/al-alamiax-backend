@@ -1,6 +1,6 @@
 import json
 
-from apps.users.admin_permissions import is_top  # noqa: F401  (re-export)
+from apps.users.admin_permissions import can_view_user, is_top  # noqa: F401  (is_top re-export)
 from apps.users.types import UserTypes
 
 MAX_RESULT_BYTES = 100000
@@ -27,6 +27,13 @@ def user_brief(u) -> dict:
         "role": u.role,
         "department": u.department.name if getattr(u, "department_id", None) else None,
     }
+
+
+def visible_ref(viewer, u, fmt=user_brief):
+    """Format a nested user reference, or None when the viewer may not see that user."""
+    if u is None or not (u.pk == viewer.pk or can_view_user(viewer, u)):
+        return None
+    return fmt(u)
 
 
 def list_result(items, serialize, limit: int) -> dict:

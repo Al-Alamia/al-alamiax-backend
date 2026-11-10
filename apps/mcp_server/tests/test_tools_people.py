@@ -104,7 +104,11 @@ class PeopleToolsTests(McpTestCase):
         res = self.call(self.manager, "list_teams")
         self.assertEqual([i["name"] for i in res["structuredContent"]["items"]], ["T"])
         item = res["structuredContent"]["items"][0]
-        self.assertEqual(item["leader"]["uuid"], str(self.leader.pk))
+        # the fixture leader sits in another department, so the manager may not see them
+        self.assertIsNone(item["leader"])
+        hr_items = self.call(self.hr, "list_teams")["structuredContent"]["items"]
+        hr_item = next(i for i in hr_items if i["uuid"] == str(self.team.pk))
+        self.assertEqual(hr_item["leader"]["uuid"], str(self.leader.pk))
         self.assertEqual(item["member_count"], 1)
 
     def test_list_teams_other_scope(self):
@@ -124,7 +128,9 @@ class PeopleToolsTests(McpTestCase):
         res = self.call(self.manager, "get_team", {"team_uuid": str(self.team.pk)})
         self.assertFalse(res["isError"])
         data = res["structuredContent"]
-        self.assertEqual(data["leader"]["uuid"], str(self.leader.pk))
+        self.assertIsNone(data["leader"])  # leader is in another department
+        hr_data = self.call(self.hr, "get_team", {"team_uuid": str(self.team.pk)})["structuredContent"]
+        self.assertEqual(hr_data["leader"]["uuid"], str(self.leader.pk))
         self.assertEqual([m["uuid"] for m in data["members"]], [str(self.agent.pk)])
         self.assertEqual(data["department"]["name"], self.department.name)
         self.assertEqual(data["plans"][0]["metric"], "lead_count")

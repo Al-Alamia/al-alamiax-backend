@@ -62,9 +62,8 @@ def register(request):
             "invalid_redirect_uri",
             "Each redirect URI must be https, or http on localhost/127.0.0.1, without a fragment.")
 
-    method = body.get("token_endpoint_auth_method")
-    if method is not None and method != "none":
-        return _error("invalid_client_metadata", "Only token_endpoint_auth_method 'none' is supported.")
+    # Any requested token_endpoint_auth_method is accepted; per RFC 7591 the server
+    # may substitute its own value, and the response always says "none" (public client).
 
     name = body.get("client_name", "AI client")
     if name is None or name == "":

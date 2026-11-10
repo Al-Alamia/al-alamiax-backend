@@ -13,7 +13,7 @@ from apps.attendance.services.periods import period_key_for, period_range
 from apps.attendance.types import DayStatus, RequestKind, RequestStatus
 from apps.mcp_server.errors import ToolError
 from apps.mcp_server.registry import tool
-from apps.mcp_server.tools.common import is_payroll_viewer, limit_schema, list_result, user_brief
+from apps.mcp_server.tools.common import is_payroll_viewer, limit_schema, list_result, user_brief, visible_ref
 from apps.users.admin_permissions import can_view_user
 from apps.users.models import Department, User
 from apps.users.types import UserTypes
@@ -139,7 +139,7 @@ def attendance_summary(user, args):
 
 def _ref(viewer, u):
     """Username of a nested user reference, only when the viewer may see that user."""
-    return u.username if u is not None and (u.pk == viewer.pk or can_view_user(viewer, u)) else None
+    return visible_ref(viewer, u, lambda x: x.username)
 
 
 def _request_item(viewer, req):

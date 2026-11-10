@@ -260,9 +260,11 @@ if os.environ.get('DJANGO_BEHIND_PROXY', '0') == '1':
 # MCP server (OAuth + /mcp). Empty public URL -> derived from the request.
 MCP_PUBLIC_URL = os.environ.get('MCP_PUBLIC_URL', '').strip().rstrip('/')
 MCP_FRONTEND_URL = os.environ.get('MCP_FRONTEND_URL', '').strip().rstrip('/') or MCP_PUBLIC_URL
-MCP_RATE_LIMIT_PER_MIN = int(os.environ.get('MCP_RATE_LIMIT_PER_MIN', '120'))
+# Compose passes unset vars as empty strings, so empty means "use the default".
+MCP_RATE_LIMIT_PER_MIN = int(os.environ.get('MCP_RATE_LIMIT_PER_MIN', '').strip() or '120')
 # The public origin is added at runtime by the MCP code.
 MCP_ALLOWED_ORIGINS = [
-    o.strip() for o in os.environ.get('MCP_ALLOWED_ORIGINS', 'https://claude.ai,https://chatgpt.com').split(',')
+    o.strip() for o in (os.environ.get('MCP_ALLOWED_ORIGINS', '').strip()
+                        or 'https://claude.ai,https://chatgpt.com').split(',')
     if o.strip()
 ]

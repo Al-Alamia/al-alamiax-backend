@@ -51,7 +51,7 @@ class ProtocolTests(McpTestCase):
         self.assertEqual(r.status_code, 401)
         self.assertEqual(r.json(), {"error": "unauthorized"})
         self.assertEqual(r["WWW-Authenticate"],
-                         'Bearer resource_metadata="http://testserver/.well-known/oauth-protected-resource"')
+                         'Bearer resource_metadata="http://testserver/.well-known/oauth-protected-resource/mcp"')
 
     def test_bad_token_401_invalid_token(self):
         r = self.post({"jsonrpc": "2.0", "id": 1, "method": "ping"}, "nope")

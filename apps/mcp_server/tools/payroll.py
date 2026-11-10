@@ -4,7 +4,7 @@ from apps.attendance.models import AttendanceSettings
 from apps.attendance.services.periods import period_range
 from apps.mcp_server.errors import ToolError
 from apps.mcp_server.registry import tool
-from apps.mcp_server.tools.common import is_payroll_viewer, limit_schema, list_result
+from apps.mcp_server.tools.common import is_payroll_viewer, limit_schema, list_result, visible_ref
 from apps.monthly_basic import views as basic_views
 from apps.monthly_basic.models import MonthlyBasic
 from apps.monthly_basic.permissions import can_manage_basic, can_view_basic, list_scope
@@ -27,9 +27,7 @@ def _vis_user(viewer, u):
 
 
 def _user_ref(viewer, u):
-    if not _vis_user(viewer, u):
-        return None
-    return {"uuid": str(u.uuid), "name": u.get_full_name() or u.username}
+    return visible_ref(viewer, u, lambda x: {"uuid": str(x.uuid), "name": x.get_full_name() or x.username})
 
 
 def _target(raw):

@@ -16,7 +16,7 @@ from .errors import OAuthError
 from .metadata import json_response, preflight
 from .tokens import hash_token, issue_pair, rotate_refresh
 
-VERIFIER_RE = re.compile(r"^[A-Za-z0-9\-._~]{43,128}$")
+VERIFIER_RE = re.compile(r"[A-Za-z0-9\-._~]{43,128}")
 
 
 def _now() -> datetime:
@@ -56,7 +56,7 @@ def _required(p, *names):
 
 
 def _pkce_ok(verifier: str, challenge: str) -> bool:
-    if not VERIFIER_RE.match(verifier):
+    if not VERIFIER_RE.fullmatch(verifier):
         return False
     digest = hashlib.sha256(verifier.encode("ascii")).digest()
     computed = base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")

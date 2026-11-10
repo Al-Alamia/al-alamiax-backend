@@ -88,11 +88,15 @@ class MetadataRegistrationTests(TestCase):
 
     def test_register_rejects_bad_metadata(self):
         for body in ("not json", "[1]",
-                     {"redirect_uris": ["https://a.com/cb"], "token_endpoint_auth_method": "client_secret_basic"},
                      {"redirect_uris": ["https://a.com/cb"], "client_name": "x" * 101}):
             r = self.post(body)
             self.assertEqual(r.status_code, 400)
             self.assertEqual(r.json()["error"], "invalid_client_metadata")
+
+    def test_register_substitutes_auth_method_none(self):
+        r = self.post({"redirect_uris": ["https://a.com/cb"], "token_endpoint_auth_method": "client_secret_basic"})
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.json()["token_endpoint_auth_method"], "none")
 
     def test_register_allows_localhost(self):
         r = self.post({"redirect_uris": ["http://localhost:6274/cb", "http://127.0.0.1/cb"]})

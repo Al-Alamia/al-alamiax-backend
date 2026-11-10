@@ -2,7 +2,7 @@ import secrets
 from datetime import datetime, timedelta
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.http import HttpResponse, HttpResponseRedirect
 from django.views.decorators.http import require_GET
 from rest_framework.decorators import (
@@ -128,7 +128,13 @@ def consent(request):
             return _not_found()
         grant = OAuthGrant.objects.active().filter(user=user, client=client).first()
         if grant is None:
-            grant = OAuthGrant.objects.create(user=user, client=client)
-            record_event(user, "mcp.grant_created", target=grant, label=client.client_name)
+            try:
+                with transaction.atomic():
+                    grant = OAuthGrant.objects.create(user=user, client=client)
+            except IntegrityError:
+                # A concurrent approve created the active grant first.
+                grant = OAuthGrant.objects.active().get(user=user, client=client)
+            else:
+                record_event(user, "mcp.grant_created", target=grant, label=client.client_name)
     return Response({"redirect_to": _with_query(
         row.redirect_uri, {"code": raw, "state": row.state})})

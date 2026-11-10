@@ -52,9 +52,10 @@ def resolve_access(raw: str) -> Optional[OAuthToken]:
 
 def revoke_grant(grant, by=None) -> None:
     now = _now()
-    grant.revoked_at = now
-    grant.revoked_by = by
-    grant.save(update_fields=["revoked_at", "revoked_by", "updated_at"])
+    if grant.revoked_at is None:
+        grant.revoked_at = now
+        grant.revoked_by = by
+        grant.save(update_fields=["revoked_at", "revoked_by", "updated_at"])
     grant.tokens.filter(revoked_at__isnull=True).update(revoked_at=now)
 
 

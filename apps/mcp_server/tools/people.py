@@ -7,7 +7,7 @@ from django.db.models import Q
 
 from apps.mcp_server.errors import ToolError
 from apps.mcp_server.registry import tool
-from apps.mcp_server.tools.common import limit_schema, list_result, user_brief
+from apps.mcp_server.tools.common import limit_schema, list_result, user_brief, visible_ref
 from apps.monthly_basic.services import period_bounds
 from apps.salaries.metrics import metric_values
 from apps.salaries.services import team_metric_total
@@ -83,10 +83,10 @@ def get_user(user, args):
     return "User %s" % target.username, data
 
 
-def _team_item(t):
+def _team_item(viewer, t):
     return {"uuid": str(t.pk), "name": t.name,
             "department": t.department.name,
-            "leader": user_brief(t.leader) if t.leader else None,
+            "leader": visible_ref(viewer, t.leader),
             "member_count": t.agents.count(), "is_active": t.is_active}
 
 
@@ -105,7 +105,7 @@ def list_teams(user, args):
     if dept_name:
         qs = qs.filter(department__name__icontains=dept_name)
     qs = qs.select_related("leader__department").order_by("name")[:args["limit"] + 1]
-    result = list_result(qs, _team_item, args["limit"])
+    result = list_result(qs, lambda t: _team_item(user, t), args["limit"])
     return "%d teams%s" % (result["count"], " (truncated)" if result["truncated"] else ""), result
 
 
@@ -136,9 +136,9 @@ def get_team(user, args):
     members = team.agents.select_related("department").order_by("username")
     data = {"uuid": str(team.pk), "name": team.name, "is_active": team.is_active,
             "department": {"uuid": str(team.department.pk), "name": team.department.name},
-            "leader": user_brief(team.leader) if team.leader else None,
+            "leader": visible_ref(user, team.leader),
             "include_leader_in_total": team.include_leader_in_total,
-            "members": [user_brief(m) for m in members],
+            "members": [user_brief(m) for m in members if can_view_user(user, m) or m.pk == user.pk],
             "plans": plans}
     return "Team %s with %d members" % (team.name, len(data["members"])), data
 

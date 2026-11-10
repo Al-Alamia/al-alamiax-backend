@@ -9,7 +9,7 @@ from apps.attendance.models import AttendanceSettings
 from apps.attendance.services.periods import period_key_for
 from apps.mcp_server.errors import ToolError
 from apps.mcp_server.registry import tool
-from apps.mcp_server.tools.common import limit_schema, list_result, user_brief
+from apps.mcp_server.tools.common import limit_schema, list_result, user_brief, visible_ref
 from apps.monthly_basic.services import BasicError, period_bounds
 from apps.subscriptions import permissions as sub_perms
 from apps.subscriptions.models import Subscription
@@ -34,15 +34,15 @@ def _uuid(raw):
         return None
 
 
-def _agent_ref(assignment):
-    """Same shape as the pipeline list serializer (uuid + username)."""
+def _agent_ref(viewer, assignment):
+    """Same shape as the pipeline list serializer (uuid + username); None if the agent is not visible."""
     if assignment is None:
         return None
-    return {"uuid": str(assignment.agent.pk), "username": assignment.agent.username,
-            "assigned_at": assignment.created_at}
+    return visible_ref(viewer, assignment.agent, lambda a: {
+        "uuid": str(a.pk), "username": a.username, "assigned_at": assignment.created_at})
 
 
-def _lead_item(lead):
+def _lead_item(viewer, lead):
     return {
         "uuid": str(lead.pk),
         "name": lead.name,
@@ -50,8 +50,8 @@ def _lead_item(lead):
         "status": lead.status,
         "is_hidden": lead.is_hidden,
         "project": {"uuid": str(lead.project_id), "name": lead.project.name} if lead.project_id else None,
-        "sales_agent": _agent_ref(active_assignment(lead, AssignmentKinds.SALES.value)),
-        "cs_agent": _agent_ref(active_assignment(lead, AssignmentKinds.CS.value)),
+        "sales_agent": _agent_ref(viewer, active_assignment(lead, AssignmentKinds.SALES.value)),
+        "cs_agent": _agent_ref(viewer, active_assignment(lead, AssignmentKinds.CS.value)),
         "date": lead.date,
         "created_at": lead.created_at,
     }
@@ -90,14 +90,12 @@ def search_leads(user, args):
     if project_name:
         qs = qs.filter(project__name__icontains=project_name)
     qs = qs.order_by("-date", "-created_at")[:args["limit"] + 1]
-    result = list_result(qs, _lead_item, args["limit"])
+    result = list_result(qs, lambda l: _lead_item(user, l), args["limit"])
     return "%d leads%s" % (result["count"], " (truncated)" if result["truncated"] else ""), result
 
 
 def _agent_brief(viewer, agent):
-    if agent is not None and can_view_user(viewer, agent):
-        return user_brief(agent)
-    return {"uuid": str(agent.pk), "username": agent.username} if agent else None
+    return visible_ref(viewer, agent)
 
 
 def _subscription_summary(sub):
@@ -129,7 +127,7 @@ def get_lead(user, args):
         .prefetch_related("assignments__agent", "assignments__assigned_by"))
     if lead is None:
         raise ToolError("Lead not found", "not_found")
-    data = _lead_item(lead)
+    data = _lead_item(user, lead)
     data["description"] = lead.description
     data["call_status"] = lead.call_status
     data["return_count"] = lead.return_count
@@ -140,7 +138,7 @@ def get_lead(user, args):
         for a in lead.assignments.all()]
     data["history"] = [
         {"type": u.type, "from": u.from_value, "to": u.to_value, "note": u.note,
-         "by": {"uuid": str(u.by.pk), "username": u.by.username} if u.by else None,
+         "by": visible_ref(user, u.by, lambda b: {"uuid": str(b.pk), "username": b.username}),
          "created_at": u.created_at}
         for u in lead.updates.select_related("by").order_by("-created_at")[:20]]
     subs = _lead_subscriptions(user, lead)
@@ -149,7 +147,7 @@ def get_lead(user, args):
     return "Lead %s (%s)" % (lead.name, lead.status), data
 
 
-def _subscription_item(sub):
+def _subscription_item(viewer, sub):
     paid = sum((p.amount for p in sub.payments.all()), ZERO)
     return {
         "uuid": str(sub.pk),
@@ -159,7 +157,7 @@ def _subscription_item(sub):
         "paid_amount": money(paid), "remaining_amount": money(sub.total_amount - paid),
         "status": sub.status(),
         "start_date": sub.start_date.isoformat(), "end_date": sub.end_date.isoformat(),
-        "seller": user_ref(sub.seller),
+        "seller": visible_ref(viewer, sub.seller, user_ref),
         "cancelled_at": sub.cancelled_at.isoformat() if sub.cancelled_at else None,
     }
 
@@ -196,7 +194,7 @@ def list_subscriptions(user, args):
         qs = qs.filter(kind=args["kind"])
     qs = (qs.select_related("lead", "seller").prefetch_related("payments")
           .order_by("-start_date", "-created_at", "uuid")[:args["limit"] + 1])
-    result = list_result(qs, _subscription_item, args["limit"])
+    result = list_result(qs, lambda s: _subscription_item(user, s), args["limit"])
     return ("%d subscriptions%s" % (result["count"], " (truncated)" if result["truncated"] else "")), result
 
 
