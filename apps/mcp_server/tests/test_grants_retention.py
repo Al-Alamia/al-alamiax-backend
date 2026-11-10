@@ -79,6 +79,17 @@ class GrantsApiTests(McpTestCase):
         grant.refresh_from_db()
         self.assertIsNone(grant.revoked_at)
 
+    def test_owner_cannot_see_superuser_grants(self):
+        grant = self.mk(self.superuser)
+        self.client.force_authenticate(self.owner)
+        self.assertEqual(
+            self.client.get(GRANTS, {"user": str(self.superuser.uuid)}).status_code, 404)
+        self.assertEqual(self.client.delete("%s/%s" % (GRANTS, grant.uuid)).status_code, 404)
+        grant.refresh_from_db()
+        self.assertIsNone(grant.revoked_at)
+        self.client.force_authenticate(self.superuser)
+        self.assertEqual(len(self.client.get(GRANTS).json()), 1)
+
     def test_requires_auth(self):
         self.assertEqual(self.client.get(GRANTS).status_code, 401)
         self.assertEqual(self.client.get("/api/mcp/access").status_code, 401)
@@ -121,6 +132,10 @@ class RetentionTests(McpTestCase):
         code("old-unbound", d(2))
         code("old-bound", d(3), bound=True)
         code("fresh", now + timedelta(minutes=5))
+        pending = client("pending", created=d(90))
+        OAuthAuthorizationCode.objects.create(
+            request_id="inflight", client=pending, redirect_uri="x", code_challenge="c",
+            expires_at=now + timedelta(minutes=5))
         code("recent-expired", now - timedelta(hours=2))
 
         def tok(h, exp, revoked=None):
@@ -130,6 +145,12 @@ class RetentionTests(McpTestCase):
         tok("t-old-rev", now + timedelta(days=1), revoked=d(8))
         tok("t-live", now + timedelta(days=1))
         tok("t-recent-exp", d(2))
+        OAuthToken.objects.create(
+            grant=live_grant, kind="refresh", token_hash="t-rev-refresh",
+            expires_at=now + timedelta(days=20), revoked_at=d(8))
+        OAuthToken.objects.create(
+            grant=live_grant, kind="refresh", token_hash="t-old-refresh",
+            expires_at=d(8), revoked_at=d(9))
 
         def log(created):
             row = McpCallLog.objects.create(user=self.manager, tool="t")
@@ -139,13 +160,13 @@ class RetentionTests(McpTestCase):
 
         result = retention.prune(now)
         # the dead client's own token is expired >7d, so it counts as a token
-        self.assertEqual(result, {"codes": 2, "tokens": 3, "call_logs": 1, "clients": 2})
+        self.assertEqual(result, {"codes": 2, "tokens": 4, "call_logs": 1, "clients": 2})
         self.assertEqual(set(OAuthClient.objects.values_list("client_name", flat=True)),
-                         {"keeper", "recent_use", "new"})
+                         {"keeper", "recent_use", "new", "pending"})
         self.assertEqual(McpCallLog.objects.count(), 1)
         self.assertEqual(set(OAuthToken.objects.values_list("token_hash", flat=True)),
-                         {"t-live", "t-recent-exp"})
-        self.assertEqual(OAuthAuthorizationCode.objects.count(), 2)
+                         {"t-live", "t-recent-exp", "t-rev-refresh"})
+        self.assertEqual(OAuthAuthorizationCode.objects.count(), 3)
         self.assertFalse(OAuthGrant.objects.filter(pk=dead_grant.pk).exists())
         self.assertTrue(OAuthGrant.objects.filter(pk=live_grant.pk).exists())
         self.assertFalse(OAuthClient.objects.filter(pk=stale.pk).exists())

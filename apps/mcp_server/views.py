@@ -13,8 +13,12 @@ from apps.mcp_server.models import OAuthGrant
 from apps.mcp_server.oauth.base_url import public_base
 from apps.mcp_server.oauth.tokens import revoke_grant
 from apps.users.AuthenticationClasses import EnforcedJWTAuthentication
-from apps.users.admin_permissions import is_top
+from apps.users.admin_permissions import can_view_user, is_top
 from apps.users.models import User
+
+
+def _may_manage(viewer, target) -> bool:
+    return target.pk == viewer.pk or (is_top(viewer) and can_view_user(viewer, target))
 
 
 def _error(kind, message, status):
@@ -39,6 +43,8 @@ def grants(request):
             return _error("validation_error", "user must be a valid UUID.", 400)
         if owner is None:
             return _error("not_found", "User not found", 404)
+        if not _may_manage(request.user, owner):
+            return _error("not_found", "User not found", 404)
     rows = (OAuthGrant.objects.active().filter(user=owner).select_related("client")
             .order_by("-created_at"))
     return Response([{
@@ -54,7 +60,7 @@ def grants(request):
 def revoke(request, grant_uuid):
     grant = (OAuthGrant.objects.active().select_related("client", "user")
              .filter(pk=grant_uuid).first())
-    if grant is None or (grant.user_id != request.user.pk and not is_top(request.user)):
+    if grant is None or (not _may_manage(request.user, grant.user)):
         return _error("not_found", "Connection not found", 404)
     with transaction.atomic():
         revoke_grant(grant, by=request.user)

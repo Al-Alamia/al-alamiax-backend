@@ -19,13 +19,17 @@ def prune(now: datetime) -> dict:
         codes = OAuthAuthorizationCode.objects.filter(
             expires_at__lt=now - CODE_RETENTION).delete()[0]
         cutoff = now - TOKEN_RETENTION
+        # Revoked refresh tokens are kept until expiry so reuse detection keeps working.
         tokens = OAuthToken.objects.filter(
-            Q(expires_at__lt=cutoff) | Q(revoked_at__lt=cutoff)).delete()[0]
+            Q(expires_at__lt=cutoff)
+            | Q(kind=OAuthToken.KIND_ACCESS, revoked_at__lt=cutoff)).delete()[0]
         call_logs = McpCallLog.objects.filter(
             created_at__lt=now - CALL_LOG_RETENTION).delete()[0]
         active = OAuthGrant.objects.active().values("client_id")
         # Grants/tokens/codes of a deleted client cascade away; only clients are counted.
-        stale = (OAuthClient.objects.exclude(pk__in=active)
+        in_flight = OAuthAuthorizationCode.objects.filter(
+            expires_at__gte=now).values("client_id")
+        stale = (OAuthClient.objects.exclude(pk__in=active).exclude(pk__in=in_flight)
                  .annotate(last_seen=Coalesce("last_used_at", "created_at"))
                  .filter(last_seen__lt=now - CLIENT_RETENTION))
         clients = OAuthClient.objects.filter(pk__in=list(stale.values_list("pk", flat=True))
