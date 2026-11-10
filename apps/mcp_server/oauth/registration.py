@@ -1,4 +1,5 @@
 import json
+import re
 import secrets
 import time
 from urllib.parse import urlparse
@@ -12,7 +13,7 @@ from apps.mcp_server.models import OAuthClient
 from .metadata import json_response, preflight
 
 MAX_REDIRECT_URIS = 10
-LOCAL_HOSTS = ("localhost", "127.0.0.1")
+LOCAL_NETLOC = re.compile(r"^(localhost|127\.0\.0\.1)(:[0-9]+)?$", re.IGNORECASE)
 
 
 def _error(error, description):
@@ -22,6 +23,8 @@ def _error(error, description):
 def _valid_redirect_uri(uri) -> bool:
     if not isinstance(uri, str) or not uri or len(uri) > 2000:
         return False
+    if "\\" in uri or any(ord(c) < 32 or ord(c) == 127 or c.isspace() for c in uri):
+        return False
     try:
         parsed = urlparse(uri)
         parsed.port  # raises ValueError on a bad port
@@ -29,9 +32,11 @@ def _valid_redirect_uri(uri) -> bool:
         return False
     if parsed.fragment or "#" in uri or not parsed.hostname:
         return False
+    if parsed.username is not None or "@" in parsed.netloc:
+        return False
     if parsed.scheme == "https":
         return True
-    return parsed.scheme == "http" and parsed.hostname in LOCAL_HOSTS
+    return parsed.scheme == "http" and bool(LOCAL_NETLOC.match(parsed.netloc))
 
 
 @csrf_exempt

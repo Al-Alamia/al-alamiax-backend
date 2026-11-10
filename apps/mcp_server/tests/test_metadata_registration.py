@@ -72,6 +72,20 @@ class MetadataRegistrationTests(TestCase):
             self.assertIn(r.json()["error"], ("invalid_redirect_uri", "invalid_client_metadata"))
             self.assertIn("error_description", r.json())
 
+    def test_register_rejects_tricky_uris(self):
+        for uri in ("http://evil.com\\@localhost/cb", "https://evil.com\\@a.com/cb",
+                    "https://user@a.com/cb", "https://user:pw@a.com/cb",
+                    "http://user@localhost/cb", " https://a.com/cb", "https://a.com/cb ",
+                    "https://a.com/c\nb", "https://a.com/c\tb", "http://localhost.evil.com/cb"):
+            r = self.post({"redirect_uris": [uri]})
+            self.assertEqual(r.status_code, 400, repr(uri))
+            self.assertEqual(r.json()["error"], "invalid_redirect_uri")
+
+    def test_register_accepts_uppercase_localhost(self):
+        r = self.post({"redirect_uris": ["HTTP://LOCALHOST:8080/cb"]})
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.json()["redirect_uris"], ["HTTP://LOCALHOST:8080/cb"])
+
     def test_register_rejects_bad_metadata(self):
         for body in ("not json", "[1]",
                      {"redirect_uris": ["https://a.com/cb"], "token_endpoint_auth_method": "client_secret_basic"},
