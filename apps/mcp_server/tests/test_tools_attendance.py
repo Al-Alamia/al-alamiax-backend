@@ -1,6 +1,7 @@
 import datetime
 
-from apps.attendance.models import AttendanceDay
+from apps.attendance.models import AttendanceDay, AttendanceSettings
+from apps.attendance.services.periods import period_range
 from apps.attendance.tests.factories import make_leave_type, make_request
 from apps.attendance.types import DayStatus, RequestKind, RequestStatus
 from apps.mcp_server.registry import call_tool, load_tools
@@ -49,13 +50,20 @@ class AttendanceToolsTests(McpTestCase):
         self.assertTrue(self.call(self.hr, "attendance_day", {"department": "nope"})["isError"])
 
     def test_attendance_summary(self):
-        mkday(self.agent, DayStatus.PRESENT)
-        mkday(self.agent, DayStatus.LATE, date=TODAY - datetime.timedelta(days=1), late_minutes=10)
-        res = self.call(self.manager, "attendance_summary", {"user_uuid": str(self.agent.pk)})
+        start, end = period_range("2026-03", AttendanceSettings.get().period_start_day)
+        mkday(self.agent, DayStatus.PRESENT, date=start)
+        mkday(self.agent, DayStatus.PRESENT, date=start + datetime.timedelta(days=1))
+        mkday(self.agent, DayStatus.LATE, date=start + datetime.timedelta(days=2), late_minutes=10)
+        mkday(self.agent, DayStatus.ABSENT, date=end)
+        mkday(self.agent, DayStatus.PRESENT, date=end + datetime.timedelta(days=1))  # outside the period
+        res = self.call(self.manager, "attendance_summary",
+                        {"user_uuid": str(self.agent.pk), "period": "2026-03"})
         self.assertFalse(res["isError"])
-        s = res["structuredContent"]["summary"]
-        self.assertLessEqual(s["present"] + s["late"], 2)
-        self.assertIn("balances", res["structuredContent"]["leave"])
+        data = res["structuredContent"]
+        s = data["summary"]
+        self.assertEqual((s["present"], s["late"], s["absent"], s["late_minutes"]), (2, 1, 1, 10))
+        self.assertEqual(data["period"]["start"], start.isoformat())
+        self.assertIn("balances", data["leave"])
 
     def test_attendance_summary_other_dept_and_hidden(self):
         self.assertTrue(self.call(self.manager, "attendance_summary",
@@ -109,3 +117,27 @@ class AttendanceToolsTests(McpTestCase):
         self.assertTrue(self.call(self.hr, "leave_balances", {"user_uuid": str(self.owner.pk)})["isError"])
         res = self.call(self.manager, "leave_balances", {"user_uuid": str(self.agent.pk), "year": 2025})
         self.assertEqual(res["structuredContent"]["year"], 2025)
+
+    def test_nested_refs_hidden_when_not_visible(self):
+        req = make_request(self.agent, RequestKind.GENERAL, TODAY, status=RequestStatus.APPROVED,
+                           decided_by=self.owner, created_by=self.manager)
+        sc = self.call(self.hr, "get_request", {"request_uuid": str(req.pk)})["structuredContent"]
+        self.assertIsNone(sc["decided_by"])
+        self.assertEqual(sc["created_by"], self.manager.username)
+        items = self.call(self.hr, "list_requests", {"scope": "all"})["structuredContent"]["items"]
+        self.assertIsNone(items[0]["decided_by"])
+        sc = self.call(self.owner, "get_request", {"request_uuid": str(req.pk)})["structuredContent"]
+        self.assertEqual(sc["decided_by"], self.owner.username)
+
+    def test_get_request_flags_mirror_request_can(self):
+        orig = make_request(self.agent, RequestKind.GENERAL, TODAY, status=RequestStatus.REJECTED)
+        canc = make_request(self.agent, RequestKind.CANCELLATION, TODAY, status=RequestStatus.PENDING,
+                            cancels=orig)
+        sc = self.call(self.manager, "get_request", {"request_uuid": str(canc.pk)})["structuredContent"]
+        self.assertFalse(sc["can_approve"])
+        self.assertFalse(sc["can_decide"])
+        self.assertTrue(sc["can_reject"])
+        orig.status = RequestStatus.APPROVED
+        orig.save()
+        sc = self.call(self.manager, "get_request", {"request_uuid": str(canc.pk)})["structuredContent"]
+        self.assertTrue(sc["can_approve"])

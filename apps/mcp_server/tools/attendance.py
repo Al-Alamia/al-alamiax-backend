@@ -4,7 +4,7 @@ from datetime import date
 from django.db.models import Q
 
 from apps.attendance.models import AttendanceDay, AttendanceSettings
-from apps.attendance.permissions import can_decide, can_view, is_hr_plus, scoped_users
+from apps.attendance.permissions import can_decide, can_view, is_hr_plus, request_can, scoped_users
 from apps.attendance.serializers import balance_data
 from apps.attendance.services import leave as leave_svc
 from apps.attendance.services import requests as request_svc
@@ -137,7 +137,12 @@ def attendance_summary(user, args):
         target.username, key, summary["present"], summary["late"], summary["absent"]), data
 
 
-def _request_item(req):
+def _ref(viewer, u):
+    """Username of a nested user reference, only when the viewer may see that user."""
+    return u.username if u is not None and (u.pk == viewer.pk or can_view_user(viewer, u)) else None
+
+
+def _request_item(viewer, req):
     lt = req.leave_type
     return {
         "uuid": str(req.pk), "user": user_brief(req.user), "kind": req.kind, "status": req.status,
@@ -145,7 +150,7 @@ def _request_item(req):
         "leave_type": {"uuid": str(lt.pk), "name": lt.name} if lt else None,
         "leave_days": float(req.leave_days), "minutes": req.minutes, "punch_time": req.punch_time,
         "details": req.details, "decision_note": req.decision_note,
-        "decided_by": req.decided_by.username if req.decided_by else None,
+        "decided_by": _ref(viewer, req.decided_by),
         "decided_at": req.decided_at, "created_at": req.created_at,
     }
 
@@ -197,24 +202,25 @@ def list_requests(user, args):
         items.append(r)
         if len(items) > args["limit"]:
             break
-    result = list_result(items, _request_item, args["limit"])
+    result = list_result(items, lambda r: _request_item(user, r), args["limit"])
     return "%d requests%s" % (result["count"], " (truncated)" if result["truncated"] else ""), result
 
 
 @tool("get_request", title="Get attendance request",
       description="One attendance request with its decision details, the attendance days it affected "
-                  "and whether you can approve/reject it.",
+                  "and whether you can approve or reject it (can_approve, can_reject; same rules as the app).",
       schema={"type": "object", "required": ["request_uuid"], "properties": {
           "request_uuid": {"type": "string", "format": "uuid"}}})
 def get_request(user, args):
     req = visible_request(user, args["request_uuid"])
-    data = _request_item(req)
+    data = _request_item(user, req)
+    can = request_can(user, req, date.today())
     data.update(
-        created_by=req.created_by.username if req.created_by else None,
+        created_by=_ref(user, req.created_by),
         cancels=str(req.cancels_id) if req.cancels_id else None,
         over_balance=req.over_balance,
         has_attachment=bool(req.attachment),
-        can_decide=req.status == RequestStatus.PENDING and can_decide(user, req),
+        can_approve=can["approve"], can_reject=can["reject"], can_decide=can["approve"],
         days=[{"date": x.date.isoformat(), "status": x.status}
               for x in req.attendance_days.order_by("date")])
     return "%s %s request (%s)" % (req.user.username, req.kind, req.status), data
