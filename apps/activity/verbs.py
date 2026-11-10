@@ -16,6 +16,8 @@ VERBS: dict[str, str] = {
     "device.approved": "people",
     "device.rejected": "people",
     "device.revoked": "people",
+    "mcp.grant_created": "people",
+    "mcp.grant_revoked": "people",
     "file.uploaded": "people",
     "file.deleted": "people",
     "basic.inputs_updated": "payroll",
