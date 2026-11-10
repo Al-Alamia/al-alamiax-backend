@@ -1,3 +1,4 @@
+from unittest import mock
 from datetime import datetime, timedelta
 
 from apps.mcp_server.models import OAuthClient, OAuthGrant, OAuthToken
@@ -83,3 +84,20 @@ class TokenTests(McpTestCase):
         for raw in (pair["access_token"], pair["refresh_token"]):
             self.assertFalse(OAuthToken.objects.filter(token_hash=raw).exists())
             self.assertTrue(OAuthToken.objects.filter(token_hash=hash_token(raw)).exists())
+
+    def test_concurrent_reuse_revokes_grant(self):
+        pair = issue_pair(self.grant)
+        raw = pair["refresh_token"]
+
+        def race(user):
+            # Another request consumes the token after our read, before our CAS.
+            OAuthToken.objects.filter(token_hash=hash_token(raw)).update(used_at=datetime.now())
+            return True
+
+        with mock.patch("apps.mcp_server.oauth.tokens.is_eligible", side_effect=race):
+            with self.assertRaises(OAuthError) as cm:
+                rotate_refresh(raw, self.client_obj)
+        self.assertEqual(cm.exception.error, "invalid_grant")
+        self.grant.refresh_from_db()
+        self.assertIsNotNone(self.grant.revoked_at)
+        self.assertEqual(OAuthToken.objects.count(), 2)

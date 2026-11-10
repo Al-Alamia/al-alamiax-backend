@@ -73,10 +73,14 @@ def rotate_refresh(raw: str, client: OAuthClient) -> dict:
     if (token.revoked_at is not None or token.expires_at <= _now()
             or grant.revoked_at is not None or not is_eligible(grant.user)):
         raise invalid
+    now = _now()
     with transaction.atomic():
-        now = _now()
-        token.used_at = now
-        token.save(update_fields=["used_at", "updated_at"])
-        grant.last_used_at = now
-        grant.save(update_fields=["last_used_at", "updated_at"])
-        return issue_pair(grant)
+        claimed = OAuthToken.objects.filter(
+            pk=token.pk, used_at__isnull=True, revoked_at__isnull=True).update(used_at=now)
+        if claimed:
+            grant.last_used_at = now
+            grant.save(update_fields=["last_used_at", "updated_at"])
+            return issue_pair(grant)
+    # Lost the compare-and-set: a concurrent request already used this token.
+    revoke_grant(grant)
+    raise invalid
