@@ -3,6 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
+from apps.activity.context import current_via
 from apps.activity.models import ActivityEvent
 from apps.activity.verbs import VERBS
 
@@ -33,6 +34,9 @@ def record_event(actor, verb, *, subject=None, target=None, label="", data=None)
         area = VERBS[verb]
     except KeyError:
         raise ValueError(f"Unknown activity verb: {verb!r}")
+    via = current_via()
+    if via:
+        data = {**(data or {}), **via}
     return ActivityEvent.objects.create(
         actor=_user_or_none(actor),
         subject=_user_or_none(subject),
