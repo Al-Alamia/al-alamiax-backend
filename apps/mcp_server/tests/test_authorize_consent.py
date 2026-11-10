@@ -171,3 +171,37 @@ class AuthorizeConsentTests(McpTestCase):
         self.assertEqual(self.client.post(CONSENT, body, format="json").status_code, 404)
         self.assertEqual(self.client.get(CONSENT, {"request": rid}).status_code, 404)
         self.assertEqual(OAuthAuthorizationCode.objects.filter(code_hash__isnull=False).count(), 1)
+
+
+class ConsentAuthHardeningTests(AuthorizeConsentTests):
+    def token(self, user):
+        from rest_framework_simplejwt.tokens import AccessToken
+        return str(AccessToken.for_user(user))
+
+    def test_header_token_json_works(self):
+        rid = self.make_request()
+        r = self.client.post(CONSENT, {"request": rid, "decision": "approve"}, format="json",
+                             HTTP_AUTHORIZATION="Bearer " + self.token(self.manager))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(OAuthAuthorizationCode.objects.get(request_id=rid).user, self.manager)
+
+    def test_cookie_only_auth_401(self):
+        rid = self.make_request()
+        self.client.cookies["Authorization"] = self.token(self.manager)
+        self.assertEqual(self.client.get(CONSENT, {"request": rid}).status_code, 401)
+        r = self.client.post(CONSENT, {"request": rid, "decision": "approve"}, format="json")
+        self.assertEqual(r.status_code, 401)
+        self.assertIsNone(OAuthAuthorizationCode.objects.get(request_id=rid).user)
+
+    def test_body_token_auth_401(self):
+        rid = self.make_request()
+        r = self.client.post(CONSENT, {"request": rid, "decision": "approve",
+                                       "Authorization": self.token(self.manager)}, format="json")
+        self.assertEqual(r.status_code, 401)
+
+    def test_form_encoded_post_415(self):
+        rid = self.make_request()
+        r = self.client.post(CONSENT, {"request": rid, "decision": "approve"},
+                             HTTP_AUTHORIZATION="Bearer " + self.token(self.manager))
+        self.assertEqual(r.status_code, 415)
+        self.assertIsNone(OAuthAuthorizationCode.objects.get(request_id=rid).user)

@@ -5,11 +5,14 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from django.db import transaction
 from django.http import HttpResponse, HttpResponseRedirect
 from django.views.decorators.http import require_GET
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import (
+    api_view, authentication_classes, parser_classes, permission_classes)
+from rest_framework.parsers import JSONParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.activity.services.events import record_event
+from apps.users.AuthenticationClasses import EnforcedJWTAuthentication
 from apps.mcp_server.eligibility import is_eligible
 from apps.mcp_server.models import OAuthAuthorizationCode, OAuthClient, OAuthGrant
 
@@ -79,7 +82,11 @@ def _pending(request_id):
                     code_hash__isnull=True, expires_at__gt=_now()).first())
 
 
+# api_view is CSRF-exempt, so accept only the Authorization header (never cookies or
+# body tokens) and only JSON bodies; a cross-site form POST can then not authenticate.
 @api_view(["GET", "POST"])
+@authentication_classes([EnforcedJWTAuthentication])
+@parser_classes([JSONParser])
 @permission_classes([IsAuthenticated])
 def consent(request):
     user = request.user
