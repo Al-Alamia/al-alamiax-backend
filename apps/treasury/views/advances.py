@@ -40,7 +40,7 @@ def _user(raw):
     return user
 
 
-def _qs():
+def advances_queryset():
     return Advance.objects.select_related("user", "requested_by", "decided_by").prefetch_related(
         "schedule").order_by("-created_at")
 
@@ -72,7 +72,7 @@ def advances_list(request):
     if scope is None:
         return error("You cannot list advances.", "forbidden", 403)
     params = request.query_params
-    qs = _qs().filter(user__in=scope)
+    qs = advances_queryset().filter(user__in=scope)
     if params.get("status"):
         qs = qs.filter(status=params["status"])
     if params.get("user"):
@@ -90,7 +90,7 @@ def advances_list(request):
 @permission_classes([IsAuthenticated])
 @guarded
 def advances_mine(request):
-    return Response([s.advance_data(a, request.user) for a in _qs().filter(user=request.user)])
+    return Response([s.advance_data(a, request.user) for a in advances_queryset().filter(user=request.user)])
 
 
 @api_view(["GET"])
@@ -113,7 +113,7 @@ def _decision(request, pk, fn):
     if adv is None:
         return _not_found()
     fn(request.user, adv, _body(request))
-    return Response(s.advance_data(_qs().get(pk=pk), request.user))
+    return Response(s.advance_data(advances_queryset().get(pk=pk), request.user))
 
 
 @api_view(["POST"])

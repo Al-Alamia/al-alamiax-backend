@@ -29,7 +29,7 @@ def _err(e: SalaryError):
     return error(e.message, e.type, e.status)
 
 
-def _period(raw):
+def resolve_period(raw):
     """Validated (key, start, end); raises SalaryError for invalid/future."""
     key = raw or period_key_for(date.today(), AttendanceSettings.get().period_start_day)
     try:
@@ -62,7 +62,7 @@ def _not_found():
     return error("Not found", "not_found", 404)
 
 
-def _closed(start, end):
+def closed_period(start, end):
     return PeriodClose.objects.filter(start__lte=end, end__gte=start).select_related("closed_by").first()
 
 
@@ -74,6 +74,48 @@ def _given(user, key):
     return Salary.objects.filter(user=user, period=key, status=SalaryStatus.GIVEN).first()
 
 
+def list_row(viewer, u, key, is_given, overridden, closed):
+    """One salary-list row plus its (net, commission, total) Decimals; read-only compute."""
+    c = services.compute(u, key)
+    net = None if c["basic"]["net"] is None else Decimal(c["basic"]["net"])
+    comm = Decimal(c["commission"])
+    total = None if c["total"] is None else Decimal(c["total"])
+    row = {
+        "user": user_data(u),
+        "project": {"uuid": str(u.project.uuid), "name": u.project.name} if u.project else None,
+        "status": SalaryStatus.GIVEN.value if is_given else SalaryStatus.DRAFT.value,
+        "basic_net": None if net is None else money(net),
+        "commission": money(comm),
+        "total": None if total is None else money(total),
+        "has_overrides": any(p.get("override") for p in c["parts"]) if not is_given
+        else u.pk in overridden,
+        "error_types": [e["type"] for e in c["errors"]],
+        "can_edit": bool(can_edit_basic(viewer, u) and not closed and not is_given),
+    }
+    return row, net, comm, total
+
+
+def list_users(viewer, key, *, department_uuid=None, search="", status_filter=None):
+    """Sorted users of the salary list for ``viewer`` (None when listing is not allowed)
+    plus the set of given user ids."""
+    scope = list_scope(viewer)
+    if scope is None:
+        return None, set()
+    qs = included_users(key).filter(pk__in=scope.values("pk"))
+    if department_uuid:
+        qs = qs.filter(department__uuid=department_uuid)
+    if search:
+        qs = qs.filter(Q(username__icontains=search) | Q(first_name__icontains=search)
+                       | Q(last_name__icontains=search))
+    given_ids = set(Salary.objects.filter(period=key, status=SalaryStatus.GIVEN)
+                    .values_list("user_id", flat=True))
+    if status_filter == SalaryStatus.GIVEN:
+        qs = qs.filter(pk__in=given_ids)
+    elif status_filter == SalaryStatus.DRAFT:
+        qs = qs.exclude(pk__in=given_ids)
+    return sorted(qs.select_related("department", "project"), key=_name), given_ids
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def salary_list(request):
@@ -82,7 +124,7 @@ def salary_list(request):
     if scope is None:
         return error("You do not have permission to do that.", "forbidden", 403)
     try:
-        key, start, end = _period(request.query_params.get("period"))
+        key, start, end = resolve_period(request.query_params.get("period"))
     except SalaryError as e:
         return _err(e)
     q = request.query_params
@@ -94,21 +136,10 @@ def salary_list(request):
         return error("Invalid department.", "invalid", 400)
     search = (q.get("search") or "").strip()
 
-    qs = included_users(key).filter(pk__in=scope.values("pk"))
-    if dept:
-        qs = qs.filter(department__uuid=dept)
-    if search:
-        qs = qs.filter(Q(username__icontains=search) | Q(first_name__icontains=search)
-                       | Q(last_name__icontains=search))
-    given_ids = set(Salary.objects.filter(period=key, status=SalaryStatus.GIVEN)
-                    .values_list("user_id", flat=True))
-    if status_filter == SalaryStatus.GIVEN:
-        qs = qs.filter(pk__in=given_ids)
-    elif status_filter == SalaryStatus.DRAFT:
-        qs = qs.exclude(pk__in=given_ids)
-    users = sorted(qs.select_related("department", "project"), key=_name)
+    users, given_ids = list_users(viewer, key, department_uuid=dept, search=search,
+                                  status_filter=status_filter)
 
-    closed = _closed(start, end)
+    closed = closed_period(start, end)
     ended = date.today() >= end
     can_role = bool(is_hr_plus(viewer) or viewer.role == UserTypes.MANAGER)
     overridden = set(Salary.objects.filter(period=key, overrides__isnull=False)
@@ -120,11 +151,8 @@ def salary_list(request):
     totals, groups, results = new_sum(), {}, []
     totals["given"] = 0
     for u in users:
-        c = services.compute(u, key)
+        row, net, comm, total = list_row(viewer, u, key, u.pk in given_ids, overridden, closed)
         is_given = u.pk in given_ids
-        net = None if c["basic"]["net"] is None else Decimal(c["basic"]["net"])
-        comm = Decimal(c["commission"])
-        total = None if c["total"] is None else Decimal(c["total"])
         group = groups.setdefault(u.project_id, {"project": u.project, **new_sum()})
         for acc in (totals, group):
             acc["count"] += 1
@@ -134,18 +162,7 @@ def salary_list(request):
             if total is not None:
                 acc["total"] += total
         totals["given"] += is_given
-        results.append({
-            "user": user_data(u),
-            "project": {"uuid": str(u.project.uuid), "name": u.project.name} if u.project else None,
-            "status": SalaryStatus.GIVEN.value if is_given else SalaryStatus.DRAFT.value,
-            "basic_net": None if net is None else money(net),
-            "commission": money(comm),
-            "total": None if total is None else money(total),
-            "has_overrides": any(p.get("override") for p in c["parts"]) if not is_given
-            else u.pk in overridden,
-            "error_types": [e["type"] for e in c["errors"]],
-            "can_edit": bool(can_edit_basic(viewer, u) and not closed and not is_given),
-        })
+        results.append(row)
 
     def pack(acc):
         return {"count": acc["count"], "basic_net": money(acc["basic_net"]),
@@ -165,11 +182,11 @@ def salary_list(request):
     })
 
 
-def _detail(viewer, target, key, start, end):
+def detail_data(viewer, target, key, start, end):
     c = services.compute(target, key)
     salary = Salary.objects.filter(user=target, period=key).select_related("given_by").first()
     is_given = salary is not None and salary.status == SalaryStatus.GIVEN
-    closed = _closed(start, end) is not None
+    closed = closed_period(start, end) is not None
     included = included_users(key).filter(pk=target.pk).exists()
     editable = bool(can_edit_basic(viewer, target) and not closed)
     can_edit = bool(included and editable and not is_given)
@@ -195,13 +212,13 @@ def salary_detail(request, uuid):
     if target is None:
         return _not_found()
     try:
-        key, start, end = _period(request.query_params.get("period"))
+        key, start, end = resolve_period(request.query_params.get("period"))
     except SalaryError as e:
         return _err(e)
     if not (can_manage_basic(viewer, target)
             or (viewer.pk == target.pk and _given(target, key) is not None)):
         return _not_found()
-    return Response(_detail(viewer, target, key, start, end))
+    return Response(detail_data(viewer, target, key, start, end))
 
 
 def _action(request, uuid, fn, raw_period=None):
@@ -209,11 +226,11 @@ def _action(request, uuid, fn, raw_period=None):
     if target is None:
         return _not_found()
     try:
-        key, start, end = _period(raw_period if raw_period is not None else _body(request).get("period"))
+        key, start, end = resolve_period(raw_period if raw_period is not None else _body(request).get("period"))
         fn(request.user, target, key)
     except SalaryError as e:
         return _err(e)
-    return Response(_detail(request.user, target, key, start, end))
+    return Response(detail_data(request.user, target, key, start, end))
 
 
 @api_view(["POST"])
@@ -244,7 +261,7 @@ def override(request, uuid, part_key):
 @permission_classes([IsAuthenticated])
 def give_all(request):
     try:
-        key, _, _ = _period(_body(request).get("period"))
+        key, _, _ = resolve_period(_body(request).get("period"))
         result = services.give_all(request.user, key)
     except SalaryError as e:
         return _err(e)

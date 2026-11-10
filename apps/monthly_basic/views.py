@@ -27,7 +27,7 @@ def _err(e: BasicError):
     return error(e.message, e.type, e.status)
 
 
-def _period(raw):
+def resolve_period(raw):
     """Validated period key; raises BasicError for invalid/future."""
     key = raw or period_key_for(date.today(), AttendanceSettings.get().period_start_day)
     services.month_of(key)
@@ -61,7 +61,7 @@ def basic_list(request):
     if scope is None:
         return error("You do not have permission to do that.", "forbidden", 403)
     try:
-        key, start, end = _period(request.query_params.get("period"))
+        key, start, end = resolve_period(request.query_params.get("period"))
     except BasicError as e:
         return _err(e)
     q = request.query_params
@@ -125,7 +125,7 @@ def basic_list(request):
     })
 
 
-def _detail(viewer, target, key, start, end):
+def detail_data(viewer, target, key, start, end):
     record = MonthlyBasic.objects.filter(user=target, period=key).first()
     values = services.compute(target, key, record)
     closed = PeriodClose.objects.filter(period=key).exists()
@@ -161,7 +161,7 @@ def basic_detail(request, uuid):
     if target is None:
         return _not_found()
     try:
-        key, start, end = _period(request.query_params.get("period"))
+        key, start, end = resolve_period(request.query_params.get("period"))
         record = MonthlyBasic.objects.filter(user=target, period=key).first()
         if not can_view_basic(viewer, target, record):
             return _not_found()
@@ -169,7 +169,7 @@ def basic_detail(request, uuid):
             services.update_inputs(viewer, target, key, _body(request))
     except BasicError as e:
         return _err(e)
-    return Response(_detail(viewer, target, key, start, end))
+    return Response(detail_data(viewer, target, key, start, end))
 
 
 def _action(request, uuid, fn):
@@ -177,11 +177,11 @@ def _action(request, uuid, fn):
     if target is None:
         return _not_found()
     try:
-        key, start, end = _period(_body(request).get("period"))
+        key, start, end = resolve_period(_body(request).get("period"))
         fn(request.user, target, key)
     except BasicError as e:
         return _err(e)
-    return Response(_detail(request.user, target, key, start, end))
+    return Response(detail_data(request.user, target, key, start, end))
 
 
 @api_view(["POST"])
@@ -200,7 +200,7 @@ def ungive(request, uuid):
 @permission_classes([IsAuthenticated])
 def close(request):
     try:
-        key, _, _ = _period(_body(request).get("period"))
+        key, _, _ = resolve_period(_body(request).get("period"))
         services.close_period(request.user, key)
     except BasicError as e:
         return _err(e)
@@ -212,7 +212,7 @@ def close(request):
 def reopen(request):
     body = _body(request)
     try:
-        key, _, _ = _period(body.get("period"))
+        key, _, _ = resolve_period(body.get("period"))
         services.reopen_period(request.user, key, body.get("reason"))
     except BasicError as e:
         return _err(e)
