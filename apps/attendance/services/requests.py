@@ -5,7 +5,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.activity.services.events import record_event
 from apps.attendance.models import Punch, Request
-from apps.attendance.permissions import can_decide, can_file_for, is_hr_plus
+from apps.attendance.permissions import can_decide, can_file_for, can_view, is_hr_plus
 from apps.attendance.types import PunchSource, RequestKind, RequestStatus
 
 from . import leave, request_notices as notices
@@ -28,6 +28,16 @@ class RequestError(Exception):
 
 def _now() -> datetime:
     return datetime.now()
+
+
+def request_queryset():
+    return Request.objects.select_related("user__department", "created_by", "decided_by", "leave_type")
+
+
+def get_visible_request(viewer, uuid):
+    """The request ``uuid`` if ``viewer`` may see it (``can_view`` of its owner), else None."""
+    req = request_queryset().filter(uuid=uuid).first()
+    return req if req is not None and can_view(viewer, req.user) else None
 
 
 def _today() -> date:

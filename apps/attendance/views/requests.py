@@ -51,13 +51,11 @@ def _ctx(request, with_days=False) -> dict:
     return {"request": request, "viewer": request.user, "today": svc._today(), "with_days": with_days}
 
 
-def _queryset():
-    return Request.objects.select_related("user__department", "created_by", "decided_by", "leave_type")
+_queryset = svc.request_queryset
 
 
 def _get_visible(request, uuid) -> Optional[Request]:
-    req = _queryset().filter(uuid=uuid).first()
-    return req if req is not None and can_view(request.user, req.user) else None
+    return svc.get_visible_request(request.user, uuid)
 
 
 def _present(data, name):

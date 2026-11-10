@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from apps.attendance.models import AttendanceDay, AttendanceSettings
 from apps.attendance.permissions import IsHRPlus, IsManagerPlus, can_view, is_hr_plus, scoped_users
 from apps.attendance.serializers import AttendanceDaySerializer, UserRefSerializer
+from apps.attendance.services.day_summary import day_summary as _summary
 from apps.attendance.services.evaluate import recalculate
 from apps.attendance.services.periods import period_key_for, period_range
 from apps.attendance.types import DayStatus
@@ -33,29 +34,6 @@ def _uuid(value) -> Optional[uuid_lib.UUID]:
         return uuid_lib.UUID(str(value))
     except ValueError:
         return None
-
-
-def _sum_status(days, status) -> int:
-    return sum(1 for d in days if d.status == status)
-
-
-def _summary(days) -> dict:
-    present, late = _sum_status(days, DayStatus.PRESENT), _sum_status(days, DayStatus.LATE)
-    return {
-        "present": present,
-        "late": late,
-        "absent": _sum_status(days, DayStatus.ABSENT),
-        "incomplete": _sum_status(days, DayStatus.INCOMPLETE),
-        "weekend": _sum_status(days, DayStatus.WEEKEND),
-        "holiday": _sum_status(days, DayStatus.HOLIDAY),
-        "no_shift": _sum_status(days, DayStatus.NO_SHIFT),
-        "leave": _sum_status(days, DayStatus.LEAVE),
-        "excused": _sum_status(days, DayStatus.EXCUSED),
-        "late_minutes": sum(d.late_minutes for d in days),
-        "early_leave_minutes": sum(d.early_leave_minutes for d in days),
-        "deduction_days": round(sum(d.deduction_days for d in days), 2),
-        "on_time_percent": round(100 * present / (present + late), 1) if present + late else 0,
-    }
 
 
 @api_view(["GET"])
