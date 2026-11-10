@@ -7,3 +7,4 @@ from apps.mcp_server.tools import payroll  # noqa
 from apps.mcp_server.tools import treasury  # noqa
 from apps.mcp_server.tools import reports  # noqa
 from apps.mcp_server.tools import activity  # noqa
+from apps.mcp_server.tools import writes  # noqa

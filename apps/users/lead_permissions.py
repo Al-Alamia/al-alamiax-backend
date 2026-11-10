@@ -119,6 +119,17 @@ def capabilities(user) -> dict:
     }
 
 
+def assignable_agents_qs(user):
+    """Active Sales users ``user`` may assign leads to: everyone for admins, else self + led teams."""
+    from .models import User
+
+    role = resolve_role(user)
+    agents = User.objects.filter(department__code=DepartmentCodes.SALES.value, is_active=True)
+    if not role.is_admin:
+        agents = agents.filter(Q(uuid__in=role.team_member_ids) | Q(pk=user.pk))
+    return agents
+
+
 def get_visible_lead(user, uuid, qs=None):
     """Lead by uuid within the viewer's scope; hidden leads too when they hold view_hidden."""
     from .models import Lead

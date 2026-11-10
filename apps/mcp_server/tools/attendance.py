@@ -206,13 +206,8 @@ def list_requests(user, args):
     return "%d requests%s" % (result["count"], " (truncated)" if result["truncated"] else ""), result
 
 
-@tool("get_request", title="Get attendance request",
-      description="One attendance request with its decision details, the attendance days it affected "
-                  "and whether you can approve or reject it (can_approve, can_reject; same rules as the app).",
-      schema={"type": "object", "required": ["request_uuid"], "properties": {
-          "request_uuid": {"type": "string", "format": "uuid"}}})
-def get_request(user, args):
-    req = visible_request(user, args["request_uuid"])
+def request_detail(user, req) -> dict:
+    """The get_request payload (also returned by the decision write tools)."""
     data = _request_item(user, req)
     can = request_can(user, req, date.today())
     data.update(
@@ -223,6 +218,17 @@ def get_request(user, args):
         can_approve=can["approve"], can_reject=can["reject"], can_decide=can["approve"],
         days=[{"date": x.date.isoformat(), "status": x.status}
               for x in req.attendance_days.order_by("date")])
+    return data
+
+
+@tool("get_request", title="Get attendance request",
+      description="One attendance request with its decision details, the attendance days it affected "
+                  "and whether you can approve or reject it (can_approve, can_reject; same rules as the app).",
+      schema={"type": "object", "required": ["request_uuid"], "properties": {
+          "request_uuid": {"type": "string", "format": "uuid"}}})
+def get_request(user, args):
+    req = visible_request(user, args["request_uuid"])
+    data = request_detail(user, req)
     return "%s %s request (%s)" % (req.user.username, req.kind, req.status), data
 
 

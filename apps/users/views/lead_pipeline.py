@@ -3,7 +3,6 @@ from uuid import UUID
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Q
 from django.http import Http404
 from django.utils.dateparse import parse_date
 from rest_framework import serializers, status as http_status
@@ -13,7 +12,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from apps.users.lead_permissions import capabilities, get_visible_lead, row_can, scope_queryset
+from apps.users.lead_permissions import assignable_agents_qs, capabilities, get_visible_lead, row_can, scope_queryset
 from apps.users.lead_roles import resolve_role
 from apps.users.models import Lead, LeadScreenshot, User
 from apps.users.serializers.lead_pipeline import (
@@ -23,7 +22,7 @@ from apps.users.serializers.lead_pipeline import (
     LeadWriteSerializer,
 )
 from apps.users.services.leads import LeadRuleError, apply_lead_filters, assign_leads, log_update, return_lead
-from apps.users.types import AssignmentKinds, CallStatuses, DepartmentCodes, LeadStatuses, LeadUpdateTypes
+from apps.users.types import AssignmentKinds, CallStatuses, LeadStatuses, LeadUpdateTypes
 
 from utils.phones import normalize_sa_phone
 
@@ -230,10 +229,7 @@ class LeadViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"], url_path="assignable-agents", url_name="assignable-agents")
     def assignable_agents(self, request):
         self._require_assign()
-        role = resolve_role(request.user)
-        agents = User.objects.filter(department__code=DepartmentCodes.SALES.value, is_active=True)
-        if not role.is_admin:
-            agents = agents.filter(Q(uuid__in=role.team_member_ids) | Q(pk=request.user.pk))
+        agents = assignable_agents_qs(request.user)
         return Response(
             [
                 {"uuid": a.uuid, "username": a.username, "name": a.get_full_name() or a.username}
