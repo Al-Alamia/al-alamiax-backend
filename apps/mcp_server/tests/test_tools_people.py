@@ -185,3 +185,20 @@ class PeopleToolsTests(McpTestCase):
         other_team = Team.objects.create(name="Z", department=self.other_agent.department)
         res = self.call(self.manager, "get_target_progress", {"team_uuid": str(other_team.pk)})
         self.assertEqual(res["structuredContent"]["error"], "not_found")
+
+    def test_hr_cannot_see_owner_progress(self):
+        res = self.call(self.hr, "get_target_progress", {"user_uuid": str(self.owner.pk)})
+        self.assertEqual(res["structuredContent"]["error"], "not_found")
+        res = self.call(self.owner, "get_target_progress", {"user_uuid": str(self.superuser.pk)})
+        self.assertEqual(res["structuredContent"]["error"], "not_found")
+
+    def test_search_users_does_not_match_email(self):
+        res = self.call(self.hr, "search_users", {"query": "other_agent@t.com"})
+        self.assertEqual(res["structuredContent"]["items"], [])
+
+    def test_get_user_teams_filtered_by_viewer_scope(self):
+        # other_agent's department manager is not in play: put other_agent in a team of another dept
+        hidden = Team.objects.create(name="Hidden", department=self.other_agent.department)
+        hidden.agents.add(self.agent)
+        res = self.call(self.manager, "get_user", {"user_uuid": str(self.agent.pk)})
+        self.assertEqual([t["name"] for t in res["structuredContent"]["teams"]], ["T"])

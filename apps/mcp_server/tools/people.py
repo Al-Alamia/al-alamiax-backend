@@ -10,11 +10,12 @@ from apps.mcp_server.registry import tool
 from apps.mcp_server.tools.common import limit_schema, list_result, user_brief
 from apps.monthly_basic.services import period_bounds
 from apps.salaries.metrics import metric_values
+from apps.salaries.services import team_metric_total
 from apps.teams.models import CommissionPlan, Team
 from apps.teams.permissions import list_teams_queryset, supervised_users, visible_teams
 from apps.teams.serializers import tier_data
 from apps.teams.services import (
-    evaluate, personal_version_for, team_total, team_versions_for_leader, version_for)
+    evaluate, personal_version_for, version_for)
 from apps.teams.types import PlanKind, PlanMetric
 from apps.users.admin_permissions import can_view_user, visible_users
 from apps.users.models import User
@@ -36,13 +37,14 @@ def _user_item(u):
     return data
 
 
-def _team_refs(user):
-    teams = Team.objects.filter(Q(leader=user) | Q(agents=user), is_active=True).distinct().order_by("name")
+def _team_refs(target, viewer):
+    teams = (visible_teams(viewer).filter(Q(leader=target) | Q(agents=target), is_active=True)
+             .distinct().order_by("name"))
     return [{"uuid": str(t.pk), "name": t.name} for t in teams]
 
 
 @tool("search_users", title="Search users",
-      description="Search users you are allowed to see (by name, username or email), optionally "
+      description="Search users you are allowed to see (by name or username), optionally "
                   "filtered by department (name or uuid), role and active state.",
       schema={"type": "object", "properties": {
           "query": {"type": "string", "maxLength": 100},
@@ -54,7 +56,7 @@ def search_users(user, args):
     qs = visible_users(user).select_related("department").filter(is_active=args["active"])
     if q := args.get("query", "").strip():
         qs = qs.filter(Q(username__icontains=q) | Q(first_name__icontains=q)
-                       | Q(last_name__icontains=q) | Q(email__icontains=q))
+                       | Q(last_name__icontains=q) | Q(crm_username__icontains=q))
     if dept := args.get("department", "").strip():
         uid = _uuid(dept)
         qs = qs.filter(department__uuid=uid) if uid else qs.filter(department__name__icontains=dept)
@@ -77,7 +79,7 @@ def get_user(user, args):
     data = _user_item(target)
     profile = getattr(target, "profile", None)
     data["phone"] = profile.phone if profile else None
-    data["teams"] = _team_refs(target)
+    data["teams"] = _team_refs(target, user)
     return "User %s" % target.username, data
 
 
@@ -170,24 +172,17 @@ def _personal_progress(target, month, start, end):
 
 
 def _team_progress(team, month, start, end):
-    members = list(team.agents.all())
-    if team.include_leader_in_total and team.leader_id:
-        members.append(team.leader)
-    mvs = {m.pk: metric_values(m, start, end) for m in members}
-    rows = []
+    cache, rows = {}, []
     for plan in CommissionPlan.objects.filter(
             is_active=True, kind=PlanKind.TEAM, team=team).order_by("metric"):
         version = version_for(plan, month)
         if version is None:
             continue
-        metric = plan.metric
-        total = team_total(team, {pk: mv["values"][metric] for pk, mv in mvs.items()})
-        numerators = sum((mv["shares"][metric] * mv["values"][metric] / 100
-                          for mv in mvs.values() if mv["shares"][metric] is not None), Decimal("0"))
-        share = None
-        if total and metric not in ("sales_american_amount", "american_subscription_count"):
-            share = numerators * 100 / total
-        rows.append(_progress_row(metric, version, total, share))
+        errors = []
+        total, share = team_metric_total(team, plan.metric, start, end, cache, errors)
+        if errors:
+            raise errors[0]
+        rows.append(_progress_row(plan.metric, version, total, share))
     return rows
 
 
@@ -210,7 +205,7 @@ def get_target_progress(user, args):
         target = supervised_users(user).filter(pk=args["user_uuid"]).first()
         if target is None and args["user_uuid"] == user.pk:
             target = user
-        if target is None:
+        if target is None or not can_view_user(user, target):
             raise ToolError("User not found", "not_found")
         rows = _personal_progress(target, month, start, end)
         label = target.username

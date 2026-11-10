@@ -113,11 +113,11 @@ def _tier_part(part, metric, version, value, share, month, errors):
     part["computed"] = _money(amount)
 
 
-def _team_part(team, version, month, start, end, cache, errors):
-    metric = version.plan.metric
-    part = _base_part(f"{PartKind.TEAM.value}:{team.uuid}:{metric}", PartKind.TEAM.value,
-                      f"Team {team.name} ({PlanMetric(metric).label})", metric,
-                      {"uuid": str(team.uuid), "name": team.name})
+def team_metric_total(team, metric, start, end, cache, errors):
+    """Team total and American share (or None) for ``metric``; ``(None, None)`` if a rate is missing.
+
+    ``cache`` maps user pk -> metric_values (or MissingRate); ``errors`` collects MissingRate.
+    """
     members = list(team.agents.all())
     if team.include_leader_in_total and team.leader_id:
         members.append(team.leader)
@@ -139,14 +139,25 @@ def _team_part(team, version, month, start, end, cache, errors):
         if share is not None:
             numerators += share * mv["values"][metric] / 100
     if failed:
-        part["value"] = _money(ZERO) if metric in AMOUNT_METRICS else "0"
-        if metric in AMOUNT_METRICS:
-            part["currency"] = "SAR"
-        return part
+        return None, None
     total = team_total(team, values)
     share = None
     if total and metric not in ("sales_american_amount", "american_subscription_count"):
         share = numerators * 100 / total
+    return total, share
+
+
+def _team_part(team, version, month, start, end, cache, errors):
+    metric = version.plan.metric
+    part = _base_part(f"{PartKind.TEAM.value}:{team.uuid}:{metric}", PartKind.TEAM.value,
+                      f"Team {team.name} ({PlanMetric(metric).label})", metric,
+                      {"uuid": str(team.uuid), "name": team.name})
+    total, share = team_metric_total(team, metric, start, end, cache, errors)
+    if total is None:
+        part["value"] = _money(ZERO) if metric in AMOUNT_METRICS else "0"
+        if metric in AMOUNT_METRICS:
+            part["currency"] = "SAR"
+        return part
     _tier_part(part, metric, version, total, share, month, errors)
     return part
 
