@@ -60,4 +60,6 @@ class RecordEventTests(BaseUserTestCase):
     def test_every_verb_has_valid_area(self):
         for verb, area in VERBS.items():
             self.assertIn(area, Area.values, verb)
-        self.assertEqual(len(VERBS), 60)
+        self.assertEqual(len(VERBS), 62)
+        self.assertEqual(VERBS["mcp.grant_created"], "people")
+        self.assertEqual(VERBS["mcp.grant_revoked"], "people")
