@@ -22,6 +22,8 @@ INSTRUCTIONS = (
 )
 PARSE_ERROR, INVALID_REQUEST, METHOD_NOT_FOUND, INVALID_PARAMS = -32700, -32600, -32601, -32602
 ALLOW_HEADERS = "Authorization, Content-Type, MCP-Protocol-Version, Mcp-Session-Id"
+MAX_BATCH = 50
+PARSE_FAILED = object()
 EXPOSE_HEADERS = "WWW-Authenticate, Mcp-Protocol-Version"
 
 
@@ -142,8 +144,17 @@ def mcp_endpoint(request):
     grant = token.grant
     user = grant.user
 
+    try:
+        body = json.loads(request.body.decode("utf-8"))
+    except (ValueError, UnicodeDecodeError, RecursionError):
+        body = PARSE_FAILED
+
+    if isinstance(body, list) and len(body) > MAX_BATCH:
+        cost = 1
+    else:
+        cost = len(body) if isinstance(body, list) and body else 1
     limit = getattr(settings, "MCP_RATE_LIMIT_PER_MIN", 120)
-    if not ratelimit.hit("mcp:rl:%s" % grant.uuid, limit, 60):
+    if not ratelimit.hit(str(grant.uuid), limit, 60, cost):
         response = _json({"error": "rate_limited"}, 429, origin)
         response["Retry-After"] = "60"
         return response
@@ -151,10 +162,10 @@ def mcp_endpoint(request):
     _touch(grant)
     load_tools()
 
-    try:
-        body = json.loads(request.body.decode("utf-8"))
-    except (ValueError, UnicodeDecodeError):
+    if body is PARSE_FAILED:
         return _json(_err(None, PARSE_ERROR, "Parse error"), 200, origin)
+    if isinstance(body, list) and len(body) > MAX_BATCH:
+        return _json(_err(None, INVALID_REQUEST, "Batch too large"), 200, origin)
 
     if isinstance(body, list):
         if not body:

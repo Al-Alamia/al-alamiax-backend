@@ -179,3 +179,26 @@ class ProtocolTests(McpTestCase):
         self.assertEqual(r.status_code, 429)
         self.assertEqual(r["Retry-After"], "60")
         self.assertEqual(r.json(), {"error": "rate_limited"})
+
+    def test_batch_too_large(self):
+        tok = self.token_for(self.manager)
+        r = self.post([{"jsonrpc": "2.0", "id": i, "method": "ping"} for i in range(51)], tok)
+        self.assertEqual(r.json()["error"]["code"], -32600)
+
+    @override_settings(MCP_RATE_LIMIT_PER_MIN=3)
+    def test_batch_counts_against_rate_limit(self):
+        tok = self.token_for(self.manager)
+        r = self.post([{"jsonrpc": "2.0", "id": i, "method": "ping"} for i in range(4)], tok)
+        self.assertEqual(r.status_code, 429)
+
+    def test_deeply_nested_json_is_parse_error(self):
+        tok = self.token_for(self.manager)
+        r = self.post("[" * 100000, tok, raw=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["error"]["code"], -32700)
+
+    def test_rate_limit_key(self):
+        from django.core.cache import cache
+        tok = self.token_for(self.manager)
+        self.post({"jsonrpc": "2.0", "id": 1, "method": "ping"}, tok)
+        self.assertEqual(cache.get("mcp:rl:%s" % self.grant.uuid), 1)
