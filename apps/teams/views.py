@@ -16,7 +16,8 @@ from apps.users.types import UserTypes
 
 from .models import CommissionPlan, Team
 from .permissions import (
-    can_manage_department, can_manage_plan, can_manage_team, is_top, manageable_departments,
+    can_manage_department, can_manage_plan, can_manage_team, is_top, list_teams_queryset,
+    manageable_departments,
     visible_plans, visible_teams,
 )
 from .serializers import plan_data, team_data, version_data
@@ -355,18 +356,13 @@ def teams(request):
     user = request.user
     if request.method == "GET":
         params = request.query_params
-        qs = visible_teams(user).select_related("department", "leader")
-        privileged = is_top(user) or user.role == UserTypes.MANAGER
-        if not (privileged and params.get("include_archived") in ("1", "true")):
-            qs = qs.filter(is_active=True)
+        dept = None
         if params.get("department"):
             dept = _uuid(params["department"])
             if dept is None:
                 return _invalid("Invalid department.")
-            qs = qs.filter(department__uuid=dept)
-        if v := params.get("search"):
-            qs = qs.filter(Q(name__icontains=v) | Q(leader__first_name__icontains=v)
-                           | Q(leader__last_name__icontains=v) | Q(leader__username__icontains=v))
+        qs = list_teams_queryset(user, department_uuid=dept, search=params.get("search"),
+                                 include_archived=params.get("include_archived") in ("1", "true"))
         return Response([team_data(t, user) for t in qs.order_by("name")])
 
     body = _body(request)

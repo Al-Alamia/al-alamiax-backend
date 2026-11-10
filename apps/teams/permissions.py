@@ -58,6 +58,20 @@ def visible_teams(user):
     return Team.objects.filter(q).distinct()
 
 
+def list_teams_queryset(user, *, department_uuid=None, search=None, include_archived=False):
+    """Teams for the teams list: visible to ``user``, active only unless a privileged user asks for archived."""
+    qs = visible_teams(user).select_related("department", "leader")
+    privileged = is_top(user) or user.role == UserTypes.MANAGER
+    if not (privileged and include_archived):
+        qs = qs.filter(is_active=True)
+    if department_uuid:
+        qs = qs.filter(department__uuid=department_uuid)
+    if search:
+        qs = qs.filter(Q(name__icontains=search) | Q(leader__first_name__icontains=search)
+                       | Q(leader__last_name__icontains=search) | Q(leader__username__icontains=search))
+    return qs
+
+
 def visible_plans(user):
     if can_read_all(user):
         return CommissionPlan.objects.all()
